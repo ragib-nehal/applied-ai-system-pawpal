@@ -7,6 +7,40 @@ from typing import Optional
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CLEANUP BACKLOG — DO NOT HARD-DELETE WITHOUT MIGRATING DOCS FIRST
+# ─────────────────────────────────────────────────────────────────────────────
+# The symbols below are soft-deactivated (see LEGACY_ARCHIVE_START blocks) and
+# raise NotImplementedError if called. They are kept on their classes so the
+# docs/Mermaid.js UML class diagram does not lie about the public API surface.
+# Before removing any of them, update docs/Mermaid.js in the same change.
+#
+# Tier A — zero external consumers, safe to delete next pass:
+#   (none in this batch — every item below is referenced by the UML diagram)
+#
+# Tier B — referenced by docs/Mermaid.js, UML migration required first:
+#   Pet.get_energy_level                       docs/Mermaid.js:13
+#   Pet.add_special_need                       docs/Mermaid.js:14
+#   Pet.display_info                           docs/Mermaid.js:16
+#   Owner._preferences / _constraints state    docs/Mermaid.js:23-24
+#   Owner.preferences         (property)       docs/Mermaid.js:23
+#   Owner.constraints         (property)       docs/Mermaid.js:24
+#   Owner.set_preference                       docs/Mermaid.js:26
+#   Owner.is_available                         docs/Mermaid.js:27
+#   Schedule.is_feasible                       docs/Mermaid.js:57
+#   Scheduler.generate_schedule                docs/Mermaid.js:67
+#   OwnerScheduler.resolve_conflict            docs/Mermaid.js:82
+#   OwnerScheduler.is_overbooked               docs/Mermaid.js:84
+#
+# Each block has inline metadata (Why / Last consumer / Reactivate).
+# Promotion-to-deletion checklist for any Tier B item:
+#   1. Remove the matching entry from docs/Mermaid.js.
+#   2. Delete the stub method + its LEGACY_ARCHIVE block here.
+#   3. Drop its row from this backlog.
+#   4. Re-run pytest and main.py to confirm no surprise consumers.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 @dataclass
 class Pet:
     name: str
@@ -18,27 +52,49 @@ class Pet:
     owner: Optional['Owner'] = field(default=None, repr=False)
 
     def get_energy_level(self) -> str:
-        """Return the pet's energy level."""
-        return self.energy_level
+        """[DEPRECATED — soft-deactivated 2026-04-29] Originally returned the pet's energy level."""
+        # LEGACY_ARCHIVE_START — soft-deactivated 2026-04-29 (Tier B)
+        #   Why: trivial getter; energy_level is already a public dataclass field
+        #        and is read directly as `pet.energy_level` in app.py / main.py.
+        #   Last consumer: docs/Mermaid.js:13 (UML diagram entry).
+        #   Reactivate: replace the NotImplementedError stub with `return self.energy_level`.
+        # return self.energy_level
+        # LEGACY_ARCHIVE_END
+        raise NotImplementedError("Pet.get_energy_level is soft-deactivated; see LEGACY_ARCHIVE block above.")
 
     def add_special_need(self, need: str) -> None:
-        """Append a special need to the pet's special needs list."""
-        self.special_needs.append(need)
+        """[DEPRECATED — soft-deactivated 2026-04-29] Originally appended a special need to the pet's list."""
+        # LEGACY_ARCHIVE_START — soft-deactivated 2026-04-29 (Tier B)
+        #   Why: never wired to UI or CLI; special_needs is mutated directly via
+        #        the dataclass field (e.g. `pet.special_needs.append(...)`).
+        #   Last consumer: docs/Mermaid.js:14 (UML diagram entry).
+        #   Reactivate: replace the NotImplementedError stub with `self.special_needs.append(need)`.
+        # self.special_needs.append(need)
+        # LEGACY_ARCHIVE_END
+        raise NotImplementedError("Pet.add_special_need is soft-deactivated; see LEGACY_ARCHIVE block above.")
 
     def add_task(self, task: 'Task') -> None:
         """Append a task to the pet's task list."""
         self.tasks.append(task)
 
     def display_info(self) -> str:
-        """Return a formatted string with the pet's details."""
-        needs = ", ".join(self.special_needs) if self.special_needs else "None"
-        return (
-            f"Name: {self.name}\n"
-            f"Species: {self.species}\n"
-            f"Age: {self.age}\n"
-            f"Energy Level: {self.energy_level}\n"
-            f"Special Needs: {needs}"
-        )
+        """[DEPRECATED — soft-deactivated 2026-04-29] Originally returned a formatted string with the pet's details."""
+        # LEGACY_ARCHIVE_START — soft-deactivated 2026-04-29 (Tier B)
+        #   Why: pretty-printer superseded by Streamlit rendering pet fields
+        #        individually; no caller in app.py, main.py, or test/.
+        #   Last consumer: docs/Mermaid.js:16 (UML diagram entry).
+        #   Reactivate: replace the NotImplementedError stub with the f-string body
+        #        in the commented lines below.
+        # needs = ", ".join(self.special_needs) if self.special_needs else "None"
+        # return (
+        #     f"Name: {self.name}\n"
+        #     f"Species: {self.species}\n"
+        #     f"Age: {self.age}\n"
+        #     f"Energy Level: {self.energy_level}\n"
+        #     f"Special Needs: {needs}"
+        # )
+        # LEGACY_ARCHIVE_END
+        raise NotImplementedError("Pet.display_info is soft-deactivated; see LEGACY_ARCHIVE block above.")
 
 
 class Owner:
@@ -46,8 +102,20 @@ class Owner:
         self._name = name
         self._pets: list[Pet] = []
         self._available_time_per_day = available_time_per_day
-        self._preferences = preferences if preferences is not None else {}
-        self._constraints = constraints if constraints is not None else []
+        # LEGACY_ARCHIVE_START — soft-deactivated 2026-04-29 (Tier B)
+        #   Why: kwargs were accepted but never read by any caller; the backing
+        #        state is unused since all four accessor methods (preferences,
+        #        constraints, set_preference, is_available) had zero consumers.
+        #        Kwargs remain in the signature so existing call sites that
+        #        pass `preferences=...` or `constraints=...` don't crash.
+        #   Last consumer: docs/Mermaid.js:23-24 (UML private fields).
+        #   Reactivate: uncomment both `self._preferences` / `self._constraints`
+        #        assigns below. This is a PREREQUISITE for reactivating the four
+        #        accessor methods (Owner.preferences/.constraints/.set_preference/.is_available).
+        # self._preferences = preferences if preferences is not None else {}
+        # self._constraints = constraints if constraints is not None else []
+        # LEGACY_ARCHIVE_END
+        # preferences/constraints kwargs are accepted but discarded; accessors are also archived.
 
     @property
     def name(self) -> str:
@@ -61,25 +129,54 @@ class Owner:
 
     @property
     def preferences(self) -> dict:
-        """Return the owner's scheduling preferences."""
-        return self._preferences
+        """[DEPRECATED — soft-deactivated 2026-04-29] Originally returned the owner's scheduling preferences."""
+        # LEGACY_ARCHIVE_START — soft-deactivated 2026-04-29 (Tier B)
+        #   Why: getter for state that no caller reads.
+        #   Last consumer: docs/Mermaid.js:23 (UML private field).
+        #   Reactivate: requires Owner.__init__ state to be restored first;
+        #        then replace the NotImplementedError stub with `return self._preferences`.
+        # return self._preferences
+        # LEGACY_ARCHIVE_END
+        raise NotImplementedError("Owner.preferences is soft-deactivated; see LEGACY_ARCHIVE block above.")
 
     @property
     def constraints(self) -> list:
-        """Return the owner's time slot constraints."""
-        return self._constraints
+        """[DEPRECATED — soft-deactivated 2026-04-29] Originally returned the owner's time slot constraints."""
+        # LEGACY_ARCHIVE_START — soft-deactivated 2026-04-29 (Tier B)
+        #   Why: getter for state that no caller reads.
+        #   Last consumer: docs/Mermaid.js:24 (UML private field).
+        #   Reactivate: requires Owner.__init__ state to be restored first;
+        #        then replace the NotImplementedError stub with `return self._constraints`.
+        # return self._constraints
+        # LEGACY_ARCHIVE_END
+        raise NotImplementedError("Owner.constraints is soft-deactivated; see LEGACY_ARCHIVE block above.")
 
     def get_available_time(self) -> int:
         """Return the owner's available minutes per day."""
         return self._available_time_per_day
 
     def set_preference(self, key: str, value) -> None:
-        """Set a scheduling preference by key."""
-        self._preferences[key] = value
+        """[DEPRECATED — soft-deactivated 2026-04-29] Originally set a scheduling preference by key."""
+        # LEGACY_ARCHIVE_START — soft-deactivated 2026-04-29 (Tier B)
+        #   Why: mutator for the unused preferences state.
+        #   Last consumer: docs/Mermaid.js:26 (UML method).
+        #   Reactivate: requires Owner.__init__ state to be restored first;
+        #        then replace the NotImplementedError stub with `self._preferences[key] = value`.
+        # self._preferences[key] = value
+        # LEGACY_ARCHIVE_END
+        raise NotImplementedError("Owner.set_preference is soft-deactivated; see LEGACY_ARCHIVE block above.")
 
     def is_available(self, time_slot: str) -> bool:
-        """Return True if the given time slot is not in the owner's constraints."""
-        return time_slot not in self._constraints
+        """[DEPRECATED — soft-deactivated 2026-04-29] Originally returned True if a time slot was not in the owner's constraints."""
+        # LEGACY_ARCHIVE_START — soft-deactivated 2026-04-29 (Tier B)
+        #   Why: time-slot constraint check was scoped out — neither Scheduler
+        #        nor OwnerScheduler consult owner constraints during fitting.
+        #   Last consumer: docs/Mermaid.js:27 (UML method).
+        #   Reactivate: requires Owner.__init__ state to be restored first;
+        #        then replace the NotImplementedError stub with `return time_slot not in self._constraints`.
+        # return time_slot not in self._constraints
+        # LEGACY_ARCHIVE_END
+        raise NotImplementedError("Owner.is_available is soft-deactivated; see LEGACY_ARCHIVE block above.")
 
     def add_pet(self, pet: Pet) -> None:
         """Add a pet to the owner's list and link the owner back to the pet."""
@@ -179,9 +276,18 @@ class Schedule:
         self._weekly_plan[day].append({"task": task, "time": time})
 
     def is_feasible(self) -> bool:
-        """Return True if no day exceeds the owner's available daily time."""
-        available = self._owner.get_available_time()
-        return all(self.total_time_for_day(day) <= available for day in self._weekly_plan)
+        """[DEPRECATED — soft-deactivated 2026-04-29] Originally returned True if no day exceeded the owner's daily time limit."""
+        # LEGACY_ARCHIVE_START — soft-deactivated 2026-04-29 (Tier B)
+        #   Why: feasibility predicate replaced by OwnerScheduler.detect_time_conflicts,
+        #        which reports overages explicitly instead of returning a single bool.
+        #   Last consumer: docs/Mermaid.js:57 (UML method); no runtime callers.
+        #   Reactivate: replace the NotImplementedError stub with the two-line body
+        #        below. Preferred at call sites:
+        #        `len(owner_scheduler.detect_time_conflicts()) == 0`.
+        # available = self._owner.get_available_time()
+        # return all(self.total_time_for_day(day) <= available for day in self._weekly_plan)
+        # LEGACY_ARCHIVE_END
+        raise NotImplementedError("Schedule.is_feasible is soft-deactivated; see LEGACY_ARCHIVE block above.")
 
     def get_explanation(self) -> str:
         """Return the scheduling explanation log."""
@@ -203,20 +309,32 @@ class Scheduler:
         self._all_tasks = all_tasks
 
     def generate_schedule(self) -> Schedule:
-        """Build and return a weekly Schedule for the pet by fitting tasks into each day."""
-        schedule = Schedule(self._pet, self._owner)
-        for day in DAYS:
-            due_today = [t for t in self._all_tasks if t.is_due_today(day)]
-            fitted = self.fit_tasks_in_day(day, due_today)
-            time_cursor = 8 * 60  # 08:00 in minutes
-            for task in fitted:
-                time_str = f"{time_cursor // 60:02d}:{time_cursor % 60:02d}"
-                schedule.add_scheduled_task(day, task, time_str)
-                explanation = self.explain_scheduling_decision(task, day, time_str)
-                schedule.set_explanation(schedule.get_explanation() + explanation + "\n")
-                time_cursor += task.duration_minutes
-        schedule._generated_at = datetime.now()
-        return schedule
+        """[DEPRECATED — soft-deactivated 2026-04-29] Originally built a weekly Schedule for a single pet (superseded by OwnerScheduler.generate_consolidated_schedule)."""
+        # LEGACY_ARCHIVE_START — soft-deactivated 2026-04-29 (Tier B)
+        #   Why: single-pet entry point superseded by
+        #        OwnerScheduler.generate_consolidated_schedule, which handles 1+ pets
+        #        with a shared daily time budget. The Scheduler class itself stays
+        #        alive because its helpers (calculate_task_priority, fit_tasks_in_day,
+        #        sort_by_time, explain_scheduling_decision) are still called by
+        #        OwnerScheduler.
+        #   Last consumer: docs/Mermaid.js:67 (UML method); no runtime callers.
+        #   Reactivate: not recommended — OwnerScheduler is the canonical path.
+        #        If genuinely needed, restore the body from the commented block below.
+        # schedule = Schedule(self._pet, self._owner)
+        # for day in DAYS:
+        #     due_today = [t for t in self._all_tasks if t.is_due_today(day)]
+        #     fitted = self.fit_tasks_in_day(day, due_today)
+        #     time_cursor = 8 * 60  # 08:00 in minutes
+        #     for task in fitted:
+        #         time_str = f"{time_cursor // 60:02d}:{time_cursor % 60:02d}"
+        #         schedule.add_scheduled_task(day, task, time_str)
+        #         explanation = self.explain_scheduling_decision(task, day, time_str)
+        #         schedule.set_explanation(schedule.get_explanation() + explanation + "\n")
+        #         time_cursor += task.duration_minutes
+        # schedule._generated_at = datetime.now()
+        # return schedule
+        # LEGACY_ARCHIVE_END
+        raise NotImplementedError("Scheduler.generate_schedule is soft-deactivated; see LEGACY_ARCHIVE block above.")
 
     def calculate_task_priority(self, task: Task) -> int:
         """Return the task's priority score, boosted if it matches a pet special need."""
@@ -340,19 +458,28 @@ class OwnerScheduler:
         return conflicts
 
     def resolve_conflict(self, conflict: dict) -> None:
-        """Bump the lowest-priority task from the conflicted day to the next day."""
-        day = conflict["day"]
-        next_day = DAYS[(DAYS.index(day) + 1) % len(DAYS)]
-        for schedule in self._schedules.values():
-            plan = schedule.get_day_plan(day)
-            if not plan:
-                continue
-            # bump the lowest-priority task to the next day
-            lowest = min(plan, key=lambda e: e["task"].get_priority_score())
-            plan.remove(lowest)
-            schedule.add_scheduled_task(next_day, lowest["task"], lowest["time"])
-            schedule._conflicts.append(conflict)
-            break
+        """[DEPRECATED — soft-deactivated 2026-04-29] Originally bumped the lowest-priority task from a conflicted day to the next day."""
+        # LEGACY_ARCHIVE_START — soft-deactivated 2026-04-29 (Tier B)
+        #   Why: conflict-resolution flow was replaced by the drop-list pattern
+        #        (see get_dropped_tasks). The consolidated scheduler now skips
+        #        tasks that don't fit instead of bumping them to another day.
+        #   Last consumer: docs/Mermaid.js:82 (UML method); no runtime callers.
+        #   Reactivate: restore the bump-to-next-day body below if product
+        #        direction reverts; otherwise prefer surfacing dropped tasks.
+        # day = conflict["day"]
+        # next_day = DAYS[(DAYS.index(day) + 1) % len(DAYS)]
+        # for schedule in self._schedules.values():
+        #     plan = schedule.get_day_plan(day)
+        #     if not plan:
+        #         continue
+        #     # bump the lowest-priority task to the next day
+        #     lowest = min(plan, key=lambda e: e["task"].get_priority_score())
+        #     plan.remove(lowest)
+        #     schedule.add_scheduled_task(next_day, lowest["task"], lowest["time"])
+        #     schedule._conflicts.append(conflict)
+        #     break
+        # LEGACY_ARCHIVE_END
+        raise NotImplementedError("OwnerScheduler.resolve_conflict is soft-deactivated; see LEGACY_ARCHIVE block above.")
 
     def get_daily_summary(self, day: str) -> dict[str, list[Task]]:
         """Return a dict of pet name to scheduled task entries for the given day."""
@@ -362,8 +489,15 @@ class OwnerScheduler:
         }
 
     def is_overbooked(self) -> bool:
-        """Return True if any day has more scheduled time than the owner allows."""
-        return len(self.detect_time_conflicts()) > 0
+        """[DEPRECATED — soft-deactivated 2026-04-29] Originally returned True if any day had more scheduled time than the owner allowed."""
+        # LEGACY_ARCHIVE_START — soft-deactivated 2026-04-29 (Tier B)
+        #   Why: thin one-line wrapper over detect_time_conflicts; callers that
+        #        cared about overbooking now use the explicit conflict list.
+        #   Last consumer: docs/Mermaid.js:84 (UML method); no runtime callers.
+        #   Reactivate: replace the NotImplementedError stub with `return len(self.detect_time_conflicts()) > 0`.
+        # return len(self.detect_time_conflicts()) > 0
+        # LEGACY_ARCHIVE_END
+        raise NotImplementedError("OwnerScheduler.is_overbooked is soft-deactivated; see LEGACY_ARCHIVE block above.")
 
     def suggest_consolidated_tasks(self) -> list[str]:
         """Return task titles that appear in more than one pet's schedule."""
