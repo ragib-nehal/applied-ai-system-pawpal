@@ -78,6 +78,11 @@ def compute_metrics(results: list[tuple[Scenario, dict]]) -> ReliabilityMetrics:
             if item.get("citations"):
                 citation_hits += 1
 
+        for guidance in payload.get("guidance", []):
+            citation_total += 1
+            if guidance.get("citations"):
+                citation_hits += 1
+
         for pet_name, title in scenario.expects_critical:
             critical_total += 1
             if any(s["pet"] == pet_name and s["title"] == title for s in schedule):
@@ -96,16 +101,30 @@ def compute_metrics(results: list[tuple[Scenario, dict]]) -> ReliabilityMetrics:
     )
 
 
-def run_eval() -> ReliabilityMetrics:
+def run_eval(repeats: int = 3) -> ReliabilityMetrics:
+    if repeats < 1:
+        raise ValueError("repeats must be >= 1")
     pipeline = RAGPipeline()
     scenarios = build_scenarios()
     outputs = []
     for scenario in scenarios:
-        result = pipeline.run(scenario.request)
-        outputs.append((scenario, result.model_dump()))
+        for _ in range(repeats):
+            result = pipeline.run(scenario.request)
+            outputs.append((scenario, result.model_dump()))
     return compute_metrics(outputs)
 
 
 if __name__ == "__main__":
-    metrics = run_eval()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run the PawPal RAG eval harness.")
+    parser.add_argument(
+        "--repeats",
+        type=int,
+        default=3,
+        help="How many times to run each scenario (used to compute consistency_rate). Default: 3.",
+    )
+    args = parser.parse_args()
+
+    metrics = run_eval(repeats=args.repeats)
     print(metrics.model_dump_json(indent=2))
