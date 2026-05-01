@@ -174,7 +174,7 @@ if st.button("Generate Schedule via RAG"):
         st.error("Add at least one task.")
     else:
         try:
-            response = requests.post(f"{api_base.rstrip('/')}/schedule", json=payload, timeout=120)
+            response = requests.post(f"{api_base.rstrip('/')}/schedule", json=payload, timeout=240)
             response.raise_for_status()
             st.session_state.rag_result = response.json()
             st.success("RAG schedule generated.")

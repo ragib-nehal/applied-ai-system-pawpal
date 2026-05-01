@@ -14,7 +14,7 @@ class OllamaClient:
     def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, Any]:
         response = requests.post(
             f"{self.base_url}/api/chat",
-            timeout=60,
+            timeout=180,
             json={
                 "model": self.model,
                 "stream": False,
