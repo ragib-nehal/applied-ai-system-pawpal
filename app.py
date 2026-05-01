@@ -52,6 +52,38 @@ st.title("🐾 PawPal+ RAG")
 st.caption("Grounded schedule generation with citations, validation, and fallback safety.")
 init_state()
 
+api_base = st.text_input("FastAPI base URL", value="http://localhost:8000")
+
+with st.expander("⚠️ Danger zone — Reset demo data"):
+    st.caption(
+        "Wipes the FastAPI server's local SQLite + Chroma stores so demos start "
+        "from a clean slate. Destructive and irreversible — local demo only."
+    )
+    if st.session_state.get("reset_confirm"):
+        st.warning("This will permanently delete all retrieval records and pipeline run history.")
+        bc1, bc2 = st.columns(2)
+        with bc1:
+            if st.button("Confirm wipe", type="primary", key="reset_confirm_btn"):
+                try:
+                    response = requests.post(
+                        f"{api_base.rstrip('/')}/admin/reset", timeout=30
+                    )
+                    response.raise_for_status()
+                    st.session_state.rag_result = None
+                    st.session_state.reset_confirm = False
+                    st.success(response.json().get("message", "Reset complete."))
+                except Exception as exc:
+                    st.session_state.reset_confirm = False
+                    st.error(f"Reset failed: {exc}")
+        with bc2:
+            if st.button("Cancel", key="reset_cancel_btn"):
+                st.session_state.reset_confirm = False
+                st.rerun()
+    else:
+        if st.button("Reset demo data", key="reset_arm_btn"):
+            st.session_state.reset_confirm = True
+            st.rerun()
+
 col1, col2 = st.columns(2)
 with col1:
     owner_name = st.text_input("Owner name", value="Jordan")
@@ -72,22 +104,26 @@ with pc4:
 special_needs = st.text_input("Special needs (comma-separated)", value="")
 
 if st.button("Add Pet"):
-    names = {p["name"] for p in st.session_state.pets}
-    if pet_name in names:
-        st.warning("Pet already exists.")
+    pet_name = pet_name.strip()
+    if not pet_name:
+        st.warning("Please enter a pet name.")
     else:
-        st.session_state.pets.append(
-            {
-                "name": pet_name,
-                "species": species,
-                "age": int(age),
-                "energy_level": energy,
-                "special_needs": [s.strip() for s in special_needs.split(",") if s.strip()],
-            }
-        )
-        st.session_state.tasks_per_pet[pet_name] = []
-        st.session_state.records_per_pet[pet_name] = []
-        st.success(f"Added pet {pet_name}.")
+        names = {p["name"] for p in st.session_state.pets}
+        if pet_name in names:
+            st.warning("Pet already exists.")
+        else:
+            st.session_state.pets.append(
+                {
+                    "name": pet_name,
+                    "species": species,
+                    "age": int(age),
+                    "energy_level": energy,
+                    "special_needs": [s.strip() for s in special_needs.split(",") if s.strip()],
+                }
+            )
+            st.session_state.tasks_per_pet[pet_name] = []
+            st.session_state.records_per_pet[pet_name] = []
+            st.success(f"Added pet {pet_name}.")
 
 if st.session_state.pets:
     st.caption("Pets: " + ", ".join(p["name"] for p in st.session_state.pets))
@@ -108,18 +144,22 @@ if st.session_state.pets:
     preferred_time = st.text_input("Preferred time (HH:MM optional)", value="")
     description = st.text_input("Description", value="")
     if st.button("Add Task"):
-        st.session_state.tasks_per_pet[selected_pet].append(
-            {
-                "title": task_title,
-                "duration_minutes": int(duration),
-                "priority": priority,
-                "frequency": frequency,
-                "description": description,
-                "preferred_time": preferred_time,
-                "completed": False,
-            }
-        )
-        st.success(f"Added task '{task_title}' to {selected_pet}.")
+        task_title = task_title.strip()
+        if not task_title:
+            st.warning("Please enter a task title.")
+        else:
+            st.session_state.tasks_per_pet[selected_pet].append(
+                {
+                    "title": task_title,
+                    "duration_minutes": int(duration),
+                    "priority": priority,
+                    "frequency": frequency,
+                    "description": description,
+                    "preferred_time": preferred_time,
+                    "completed": False,
+                }
+            )
+            st.success(f"Added task '{task_title}' to {selected_pet}.")
 else:
     st.info("Add at least one pet before tasks.")
 
@@ -163,7 +203,6 @@ for pet_name, records in st.session_state.records_per_pet.items():
 
 st.divider()
 st.subheader("Generate RAG Schedule")
-api_base = st.text_input("FastAPI base URL", value="http://localhost:8000")
 
 if st.button("Generate Schedule via RAG"):
     payload = build_payload(owner_name, int(available_time))

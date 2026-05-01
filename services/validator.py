@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 from schemas import RAGScheduleResponse, ScheduleRequest, ValidationResult
 
 
 CRITICAL_KEYWORDS = ("med", "medication", "insulin", "pill", "inhaler")
+_CRITICAL_KEYWORDS_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(k) for k in CRITICAL_KEYWORDS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_critical_title(title: str) -> bool:
+    return bool(_CRITICAL_KEYWORDS_RE.search(title))
 
 
 def validate_response(response: RAGScheduleResponse, request: ScheduleRequest) -> ValidationResult:
@@ -32,9 +41,7 @@ def validate_response(response: RAGScheduleResponse, request: ScheduleRequest) -
             )
 
     for pet in request.pets:
-        critical_titles = [
-            t.title for t in pet.tasks if any(k in t.title.lower() for k in CRITICAL_KEYWORDS)
-        ]
+        critical_titles = [t.title for t in pet.tasks if _is_critical_title(t.title)]
         for title in critical_titles:
             if not any(s.pet == pet.name and s.title == title for s in response.schedule):
                 errors.append(f"Critical task missing from schedule: {pet.name} - {title}.")

@@ -61,7 +61,7 @@ class RAGPipeline:
         repaired_validation = validate_response(repaired, request)
         if repaired_validation.valid:
             repaired.validation_status = "repaired"
-            repaired.validation_errors = validation.errors
+            repaired.validation_errors = repaired_validation.errors
             self._log_run(repaired)
             return repaired
 
@@ -95,34 +95,16 @@ class RAGPipeline:
                 used_fallback=False,
             )
 
-        schedule_items = []
-        for item in raw.get("schedule", []):
-            pet_name = item.get("pet", "Unknown")
-            citations = self._build_citations(item.get("citations"), citations_by_pet.get(pet_name, []))
-            schedule_items.append(
-                ScheduledTask(
-                    pet=pet_name,
-                    day=item.get("day", "Monday"),
-                    time=item.get("time", "08:00"),
-                    title=item.get("title", "Untitled"),
-                    duration_minutes=max(int(item.get("duration_minutes", 15)), 1),
-                    priority=item.get("priority", "medium"),
-                    reason=item.get("reason", "No reason provided."),
-                    citations=citations,
-                )
-            )
-
-        guidance_items = []
-        for g in raw.get("guidance", []):
-            pet_name = g.get("pet", request_pet_from_title(g.get("title", ""), citations_by_pet))
-            citations = self._build_citations(g.get("citations"), citations_by_pet.get(pet_name, []))
-            guidance_items.append(
-                GuidanceItem(
-                    title=g.get("title", "General Guidance"),
-                    detail=g.get("detail", ""),
-                    citations=citations,
-                )
-            )
+        schedule_items = [
+            task
+            for item in raw.get("schedule", [])
+            if (task := self._parse_schedule_item(item, citations_by_pet)) is not None
+        ]
+        guidance_items = [
+            guide
+            for g in raw.get("guidance", [])
+            if (guide := self._parse_guidance_item(g, citations_by_pet)) is not None
+        ]
 
         return RAGScheduleResponse(
             schedule=schedule_items,
@@ -133,6 +115,51 @@ class RAGPipeline:
             validation_status="valid",
             validation_errors=[],
             used_fallback=False,
+        )
+
+    def _parse_schedule_item(
+        self, item: object, citations_by_pet: dict[str, list[Citation]]
+    ) -> ScheduledTask | None:
+        if not isinstance(item, dict):
+            return None
+        pet_name = item.get("pet", "Unknown")
+        raw_citations = item.get("citations")
+        citations = self._build_citations(
+            raw_citations if isinstance(raw_citations, list) else [],
+            citations_by_pet.get(pet_name, []),
+        )
+        try:
+            duration_minutes = max(int(item.get("duration_minutes", 15)), 1)
+        except (TypeError, ValueError):
+            duration_minutes = 15
+        return ScheduledTask(
+            pet=pet_name,
+            day=item.get("day", "Monday"),
+            time=item.get("time", "08:00"),
+            title=item.get("title", "Untitled"),
+            duration_minutes=duration_minutes,
+            priority=item.get("priority", "medium"),
+            reason=item.get("reason", "No reason provided."),
+            citations=citations,
+        )
+
+    def _parse_guidance_item(
+        self, g: object, citations_by_pet: dict[str, list[Citation]]
+    ) -> GuidanceItem | None:
+        if not isinstance(g, dict):
+            return None
+        raw_title = g.get("title", "")
+        safe_title = raw_title if isinstance(raw_title, str) else ""
+        pet_name = g.get("pet") or request_pet_from_title(safe_title, citations_by_pet)
+        raw_citations = g.get("citations")
+        citations = self._build_citations(
+            raw_citations if isinstance(raw_citations, list) else [],
+            citations_by_pet.get(pet_name, []),
+        )
+        return GuidanceItem(
+            title=safe_title or "General Guidance",
+            detail=g.get("detail", ""),
+            citations=citations,
         )
 
     def _build_retrieval_query(self, pet_name: str, request: ScheduleRequest) -> str:
@@ -188,8 +215,11 @@ class RAGPipeline:
         )
 
     def _build_citations(self, raw_citations: list[dict] | None, fallback: list[Citation]) -> list[Citation]:
+        valid_ids = {c.record_id for c in fallback}
         citations: list[Citation] = []
         for rc in raw_citations or []:
+            if not isinstance(rc, dict) or rc.get("record_id") not in valid_ids:
+                continue
             try:
                 citations.append(Citation(**rc))
             except Exception:

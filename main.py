@@ -1,7 +1,9 @@
+import argparse
 from pprint import pprint
 
 from schemas import PetInput, RetrievalRecordInput, ScheduleRequest, TaskInput
 from services.rag_pipeline import RAGPipeline
+from services.reset import reset_all
 
 
 def build_sample_request() -> ScheduleRequest:
@@ -77,6 +79,18 @@ def build_sample_request() -> ScheduleRequest:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run the PawPal RAG pipeline against a sample request.")
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Wipe local SQLite + Chroma stores before running (destructive, local demo only).",
+    )
+    args = parser.parse_args()
+
+    if args.reset:
+        reset_all()
+        print("[reset] Local SQLite + Chroma stores wiped.")
+
     pipeline = RAGPipeline()
     result = pipeline.run(build_sample_request())
     print("\n=== PawPal RAG Output ===")

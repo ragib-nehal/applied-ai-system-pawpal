@@ -97,8 +97,12 @@ class Retriever:
         distances = result.get("distances", [[]])[0] if result.get("distances") else [None] * len(ids)
         citations: list[Citation] = []
         for idx, rid in enumerate(ids):
+            if idx >= len(metas) or idx >= len(docs):
+                continue
             section = metas[idx].get("section", "unknown")
-            snippet = docs[idx][:220] if idx < len(docs) else ""
+            snippet = docs[idx][:220]
+            if not snippet:
+                continue
             score = None
             if idx < len(distances) and distances[idx] is not None:
                 score = float(1.0 / (1.0 + distances[idx]))
