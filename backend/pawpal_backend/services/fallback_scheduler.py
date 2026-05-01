@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pawpal_system import Owner, OwnerScheduler, Pet, Task
-from schemas import Citation, GuidanceItem, RAGScheduleResponse, ScheduledTask, ScheduleRequest
+from ..schemas import Citation, GuidanceItem, RAGScheduleResponse, ScheduledTask, ScheduleRequest
 
 
 def build_deterministic_fallback(

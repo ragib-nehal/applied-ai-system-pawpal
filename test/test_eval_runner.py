@@ -3,8 +3,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from eval_runner import Scenario, build_scenarios, compute_metrics
-from schemas import PetInput, RetrievalRecordInput, ScheduleRequest, TaskInput
+from scripts.eval_runner import Scenario, build_scenarios, compute_metrics
+from backend.pawpal_backend.schemas import PetInput, RetrievalRecordInput, ScheduleRequest, TaskInput
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +259,7 @@ def test_consistency_miss_when_different_schedule_for_same_scenario():
 # ---------------------------------------------------------------------------
 
 def test_compute_metrics_returns_reliability_metrics():
-    from schemas import ReliabilityMetrics
+    from backend.pawpal_backend.schemas import ReliabilityMetrics
     results = [(_scenario(), _payload())]
     metrics = compute_metrics(results)
     assert isinstance(metrics, ReliabilityMetrics)

@@ -1,9 +1,9 @@
 import argparse
 from pprint import pprint
 
-from schemas import PetInput, RetrievalRecordInput, ScheduleRequest, TaskInput
-from services.rag_pipeline import RAGPipeline
-from services.reset import reset_all
+from backend.pawpal_backend.schemas import PetInput, RetrievalRecordInput, ScheduleRequest, TaskInput
+from backend.pawpal_backend.services.rag_pipeline import RAGPipeline
+from backend.pawpal_backend.services.reset import reset_all
 
 
 def build_sample_request() -> ScheduleRequest:

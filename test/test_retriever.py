@@ -7,8 +7,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
-from schemas import Citation, RetrievalRecordInput
-from services.retriever import Retriever
+from backend.pawpal_backend.schemas import Citation, RetrievalRecordInput
+from backend.pawpal_backend.services.retriever import Retriever
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ class TestLexicalQuery:
     def test_returns_citation_matching_query_term(self):
         retriever = self._make_retriever()
         rows = [_row("r1", "Buddy", "medications", "Buddy needs insulin daily")]
-        with patch("services.retriever.load_all_records", return_value=rows), \
+        with patch("backend.pawpal_backend.services.retriever.load_all_records", return_value=rows), \
              patch.object(retriever, "_try_chroma_query", return_value=[]):
             results = retriever.retrieve(pet_name="Buddy", query="insulin", top_k=4)
         assert len(results) == 1
@@ -55,7 +55,7 @@ class TestLexicalQuery:
             _row("r1", "Buddy", "medications", "Buddy insulin"),
             _row("r2", "Whiskers", "medications", "Whiskers insulin"),
         ]
-        with patch("services.retriever.load_all_records", return_value=rows), \
+        with patch("backend.pawpal_backend.services.retriever.load_all_records", return_value=rows), \
              patch.object(retriever, "_try_chroma_query", return_value=[]):
             results = retriever.retrieve(pet_name="Buddy", query="insulin", top_k=4)
         assert all(r.record_id == "r1" for r in results)
@@ -64,7 +64,7 @@ class TestLexicalQuery:
     def test_returns_empty_when_no_terms_match(self):
         retriever = self._make_retriever()
         rows = [_row("r1", "Buddy", "medications", "Buddy eats food")]
-        with patch("services.retriever.load_all_records", return_value=rows), \
+        with patch("backend.pawpal_backend.services.retriever.load_all_records", return_value=rows), \
              patch.object(retriever, "_try_chroma_query", return_value=[]):
             results = retriever.retrieve(pet_name="Buddy", query="insulin diabetes", top_k=4)
         assert results == []
@@ -72,7 +72,7 @@ class TestLexicalQuery:
     def test_returns_empty_when_no_records_for_pet(self):
         retriever = self._make_retriever()
         rows = [_row("r1", "Whiskers", "medications", "medication content")]
-        with patch("services.retriever.load_all_records", return_value=rows), \
+        with patch("backend.pawpal_backend.services.retriever.load_all_records", return_value=rows), \
              patch.object(retriever, "_try_chroma_query", return_value=[]):
             results = retriever.retrieve(pet_name="Buddy", query="medication", top_k=4)
         assert results == []
@@ -83,7 +83,7 @@ class TestLexicalQuery:
             _row(f"r{i}", "Buddy", "medications", f"medication content {i}")
             for i in range(10)
         ]
-        with patch("services.retriever.load_all_records", return_value=rows), \
+        with patch("backend.pawpal_backend.services.retriever.load_all_records", return_value=rows), \
              patch.object(retriever, "_try_chroma_query", return_value=[]):
             results = retriever.retrieve(pet_name="Buddy", query="medication", top_k=3)
         assert len(results) == 3
@@ -95,7 +95,7 @@ class TestLexicalQuery:
             _row("r2", "Buddy", "medications", "medication insulin daily"),  # 3 term hits
             _row("r3", "Buddy", "medications", "medication insulin"),  # 2 term hits
         ]
-        with patch("services.retriever.load_all_records", return_value=rows), \
+        with patch("backend.pawpal_backend.services.retriever.load_all_records", return_value=rows), \
              patch.object(retriever, "_try_chroma_query", return_value=[]):
             results = retriever.retrieve(pet_name="Buddy", query="medication insulin daily", top_k=3)
         assert results[0].record_id == "r2"
@@ -106,7 +106,7 @@ class TestLexicalQuery:
         retriever = self._make_retriever()
         long_content = "medication " + "x" * 300
         rows = [_row("r1", "Buddy", "medications", long_content)]
-        with patch("services.retriever.load_all_records", return_value=rows), \
+        with patch("backend.pawpal_backend.services.retriever.load_all_records", return_value=rows), \
              patch.object(retriever, "_try_chroma_query", return_value=[]):
             results = retriever.retrieve(pet_name="Buddy", query="medication", top_k=4)
         assert len(results) == 1
@@ -115,7 +115,7 @@ class TestLexicalQuery:
     def test_citation_fields_are_correct(self):
         retriever = self._make_retriever()
         rows = [_row("r1", "Buddy", "medical_history", "Buddy has diabetes")]
-        with patch("services.retriever.load_all_records", return_value=rows), \
+        with patch("backend.pawpal_backend.services.retriever.load_all_records", return_value=rows), \
              patch.object(retriever, "_try_chroma_query", return_value=[]):
             results = retriever.retrieve(pet_name="Buddy", query="diabetes", top_k=4)
         c = results[0]
@@ -141,7 +141,7 @@ def test_retrieve_falls_back_to_lexical_when_chroma_empty():
     retriever = Retriever()
     rows = [_row("r1", "Buddy", "medications", "medication daily")]
     with patch.object(retriever, "_try_chroma_query", return_value=[]), \
-         patch("services.retriever.load_all_records", return_value=rows):
+         patch("backend.pawpal_backend.services.retriever.load_all_records", return_value=rows):
         results = retriever.retrieve(pet_name="Buddy", query="medication", top_k=4)
     assert results[0].record_id == "r1"
 
@@ -153,7 +153,7 @@ def test_retrieve_falls_back_to_lexical_when_chroma_empty():
 def test_ingest_calls_upsert_and_chroma(tmp_path):
     retriever = Retriever(chroma_dir=tmp_path / "chroma")
     records = [_record("r1", "Buddy", "medications", "content")]
-    with patch("services.retriever.upsert_retrieval_records") as mock_upsert, \
+    with patch("backend.pawpal_backend.services.retriever.upsert_retrieval_records") as mock_upsert, \
          patch.object(retriever, "_try_chroma_upsert") as mock_chroma:
         retriever.ingest(records)
     mock_upsert.assert_called_once_with(records)
@@ -162,7 +162,7 @@ def test_ingest_calls_upsert_and_chroma(tmp_path):
 
 def test_ingest_empty_list_still_calls_upsert(tmp_path):
     retriever = Retriever(chroma_dir=tmp_path / "chroma")
-    with patch("services.retriever.upsert_retrieval_records") as mock_upsert, \
+    with patch("backend.pawpal_backend.services.retriever.upsert_retrieval_records") as mock_upsert, \
          patch.object(retriever, "_try_chroma_upsert"):
         retriever.ingest([])
     mock_upsert.assert_called_once_with([])

@@ -3,9 +3,9 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from services.db import DEFAULT_DB_PATH
+from .db import DEFAULT_DB_PATH
 
-DEFAULT_CHROMA_DIR = Path(__file__).resolve().parent.parent / "data" / "chroma"
+DEFAULT_CHROMA_DIR = Path(__file__).resolve().parents[3] / "data" / "chroma"
 
 
 def reset_sqlite(db_path: Path | str = DEFAULT_DB_PATH) -> None:

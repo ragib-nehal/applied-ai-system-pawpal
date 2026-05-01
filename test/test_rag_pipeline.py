@@ -3,8 +3,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from schemas import Citation, PetInput, RetrievalRecordInput, ScheduleRequest, TaskInput
-from services.rag_pipeline import RAGPipeline
+from backend.pawpal_backend.schemas import Citation, PetInput, RetrievalRecordInput, ScheduleRequest, TaskInput
+from backend.pawpal_backend.services.rag_pipeline import RAGPipeline
 
 
 class FakeRetriever:
@@ -118,8 +118,6 @@ def test_rag_pipeline_invalid_output_uses_fallback():
     assert result.used_fallback is True
     assert result.validation_status == "fallback"
     assert result.validation_errors
-<<<<<<< rag-system
-=======
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +270,7 @@ def test_rag_pipeline_retrieval_context_count_reflects_hits():
 
 def test_rag_pipeline_run_without_retrieval_records():
     """Pipeline should handle a request with no retrieval_records gracefully."""
-    from schemas import ScheduleRequest, PetInput, TaskInput
+    from backend.pawpal_backend.schemas import ScheduleRequest, PetInput, TaskInput
 
     request_no_records = ScheduleRequest(
         owner_name="Bob",
@@ -306,21 +304,21 @@ def test_rag_pipeline_run_without_retrieval_records():
 # ---------------------------------------------------------------------------
 
 def test_request_pet_from_title_finds_pet_by_name_in_title():
-    from services.rag_pipeline import request_pet_from_title
+    from backend.pawpal_backend.services.rag_pipeline import request_pet_from_title
 
     citations_by_pet = {"Buddy": [], "Whiskers": []}
     assert request_pet_from_title("Care tip for Buddy", citations_by_pet) == "Buddy"
 
 
 def test_request_pet_from_title_case_insensitive():
-    from services.rag_pipeline import request_pet_from_title
+    from backend.pawpal_backend.services.rag_pipeline import request_pet_from_title
 
     citations_by_pet = {"Buddy": []}
     assert request_pet_from_title("care tip for buddy", citations_by_pet) == "Buddy"
 
 
 def test_request_pet_from_title_returns_first_pet_when_no_match():
-    from services.rag_pipeline import request_pet_from_title
+    from backend.pawpal_backend.services.rag_pipeline import request_pet_from_title
 
     citations_by_pet = {"Buddy": [], "Whiskers": []}
     result = request_pet_from_title("Generic tip about weather", citations_by_pet)
@@ -328,7 +326,7 @@ def test_request_pet_from_title_returns_first_pet_when_no_match():
 
 
 def test_request_pet_from_title_returns_unknown_for_empty_dict():
-    from services.rag_pipeline import request_pet_from_title
+    from backend.pawpal_backend.services.rag_pipeline import request_pet_from_title
 
     result = request_pet_from_title("some title", {})
     assert result == "Unknown"
@@ -379,4 +377,3 @@ def test_build_citations_skips_invalid_raw_entries():
     result = pipeline._build_citations(raw, fallback)
     # Valid entry should be parsed; invalid skipped
     assert result[0].record_id == "r1"
->>>>>>> main

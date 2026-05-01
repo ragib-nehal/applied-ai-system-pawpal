@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from schemas import (
+from backend.pawpal_backend.schemas import (
     Citation,
     GuidanceItem,
     PetInput,
@@ -12,7 +12,7 @@ from schemas import (
     ScheduledTask,
     TaskInput,
 )
-from services.validator import validate_response, CRITICAL_KEYWORDS
+from backend.pawpal_backend.services.validator import validate_response, CRITICAL_KEYWORDS
 
 
 # ---------------------------------------------------------------------------

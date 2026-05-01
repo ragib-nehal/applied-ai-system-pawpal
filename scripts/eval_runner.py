@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from schemas import PetInput, ReliabilityMetrics, RetrievalRecordInput, ScheduleRequest, TaskInput
-from services.rag_pipeline import RAGPipeline
+from backend.pawpal_backend.schemas import PetInput, ReliabilityMetrics, RetrievalRecordInput, ScheduleRequest, TaskInput
+from backend.pawpal_backend.services.rag_pipeline import RAGPipeline
 
 
 @dataclass
