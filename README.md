@@ -1,78 +1,93 @@
-# PawPal+
+# PawPal+ RAG
 
-**PawPal+** is a Streamlit app that helps busy pet owners stay consistent with pet care. Enter your pets, define their tasks, and PawPal+ generates an optimized weekly schedule — automatically handling priorities, time limits, recurrence, and conflicts across multiple pets.
+PawPal+ RAG is a local-first applied AI system for pet-care scheduling. It uses Retrieval-Augmented Generation (RAG) to ground schedule decisions in pet context (medical history, medications, constraints, behavior notes), enforces validation guardrails, and falls back safely to deterministic scheduling when needed.
 
-## Features
+## Core Applied-AI Features
 
-- **Priority-based scheduling:** tasks ranked high/medium/low; higher-priority tasks fill the day first
-- **Time-anchored tasks:** tasks with a `preferred_time` are placed before untimed ones, sorted chronologically
-- **Special-needs priority boost:** tasks matching a pet's special needs receive a +1 priority score at scheduling time
-- **Daily & weekly recurrence:** completed tasks automatically generate a follow-up due the next day (daily) or next week (weekly); one-time tasks are not repeated
-- **Due-date awareness:** tasks with a future due date are silently skipped until that date arrives, preventing double-scheduling after recurrence
-- **Multi-pet conflict detection:** flags days where combined task time across all pets exceeds the owner's daily time limit
-- **Time-slot conflict warnings:** detects when two or more tasks across any pet are assigned the exact same start time
-- **Conflict resolution:** automatically bumps the lowest-priority task from an overbooked day to the next day
-- **Dropped task tracking:** tasks that don't fit the daily budget are recorded and surfaced so nothing is silently lost
-- **Consolidated task suggestions:** identifies task titles that appear across multiple pets' schedules as candidates to batch together
-- **Scheduling explanations:** every scheduled task logs a human-readable reason showing its priority, duration, day, and assigned time
+- **Mandatory runtime RAG:** every schedule request runs retrieval + generation.
+- **Citation-based outputs:** each schedule and guidance item includes at least one citation.
+- **Validation guardrails:** blocks invalid outputs (missing citations, time-limit violations, missing critical medication tasks).
+- **Auto-repair and fallback:** failed validation triggers one repair pass; second failure uses deterministic fallback.
+- **Reliability metrics:** evaluation runner reports violation rate, citation coverage, critical-task recall, consistency, and fallback frequency.
 
-## Smarter Scheduling
+## Architecture
 
-Three features were added to `pawpal_system.py` to make the scheduler more intelligent:
+- `api_server.py`: FastAPI service entrypoint.
+- `services/retriever.py`: retrieval layer (Chroma-first, lexical fallback).
+- `services/rag_pipeline.py`: orchestration (retrieve -> generate -> validate -> repair/fallback).
+- `services/validator.py`: hard-rule validation.
+- `services/fallback_scheduler.py`: deterministic scheduler fallback.
+- `services/db.py`: SQLite persistence for retrieval records and pipeline run logs.
+- `app.py`: Streamlit frontend that calls FastAPI.
+- `eval_runner.py`: reproducible reliability benchmark runner.
 
-**Automatic task recurrence**: when `task.mark_complete()` is called on a `daily` or `weekly` task, it now returns a new `Task` instance due on the next occurrence (today + 1 day for daily, today + 7 days for weekly). One-time tasks return `None`. Callers add the returned task back to the pet to keep the schedule rolling forward.
+## Local Stack
 
-**Due-date awareness**: `Task` has a new optional `due_date` field. `is_due_today()` respects it: a task with a future `due_date` is silently skipped by the scheduler until that date arrives. This prevents a just-completed recurring task from being re-scheduled the same day its successor is created.
+- FastAPI + Uvicorn
+- Ollama (`qwen2.5` + `nomic-embed-text`)
+- ChromaDB (local vector index)
+- SQLite file DB (no standalone DB server)
+- Streamlit UI
 
-**Time-slot conflict detection**: `OwnerScheduler.detect_time_slot_conflicts()` scans every day's plan across all pets and reports any time slot where two or more tasks overlap. It returns plain warning strings rather than raising exceptions, so the app stays running and the owner can decide how to resolve the clash. `get_time_slot_conflict_report()` formats those warnings into a single printable string.
+## Setup
 
-## Testing PawPal+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-### Running the tests
+Pull local models:
+
+```bash
+ollama pull qwen2.5
+ollama pull nomic-embed-text
+```
+
+## Run the System
+
+Start API:
+
+```bash
+uvicorn api_server:app --reload
+```
+
+Start UI (new terminal):
+
+```bash
+streamlit run app.py
+```
+
+Optional CLI run:
+
+```bash
+python main.py
+```
+
+## Reliability Evaluation
+
+```bash
+python eval_runner.py
+```
+
+The script prints a metrics JSON object containing:
+- `violation_rate`
+- `citation_coverage_rate`
+- `critical_task_recall`
+- `consistency_rate`
+- `fallback_frequency`
+
+## Tests
+
+Run full test suite:
 
 ```bash
 python -m pytest test/
 ```
 
-To run a single test by name:
+## Notes
 
-```bash
-python -m pytest test/test_pawpal.py::test_mark_complete_changes_status
-```
-
-### What the tests cover
-
-| Area | Tests |
-|---|---|
-| **Sorting correctness** | Tasks with `preferred_time` are sorted chronologically; timed tasks always schedule before untimed ones; untimed tasks sort high → medium → low priority |
-| **Recurrence logic** | Daily tasks produce a next task due +1 day; weekly tasks produce one due +7 days; one-time tasks return `None`; recurred tasks preserve title, duration, and priority |
-| **Conflict detection** | Daily time-budget conflicts are reported when combined pet tasks exceed `available_time_per_day`; time-slot conflicts are flagged when two tasks share the same start time; no false positives for a single pet with one task |
-| **Task basics** | Tasks start incomplete; `mark_complete` sets the flag; pets track task counts correctly |
-
-### Confidence Level
-
-★★★★☆ (4/5)
-
-The core scheduling behaviors — priority sorting, recurrence, and conflict detection — are all verified and passing. Confidence is held back from 5 stars because the time-slot conflict check assumes a fixed 08:00 start with no overlap handling across a real wall-clock range, and the UI layer (`app.py`) has no automated test coverage.
-
-## Getting started
-
-### Setup
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### How to use
-
-1. Enter your name and available minutes per day.
-2. Add one or more pets (name, species, age, energy level, special needs).
-3. Add tasks to each pet (title, duration, priority, frequency, optional preferred time).
-4. Click **Generate Schedule** to produce a full weekly plan.
-5. Review the schedule, conflict warnings, and scheduling explanations.
-
-### Demo        
-![App Screenshot](assets/pawpal_demo.png)
+- If Ollama is unavailable, the pipeline logs failures and falls back to deterministic scheduling.
+- All persistent artifacts are local: `data/pawpal.db` and local Chroma directory.
+- The system is designed to be reproducible on a single machine for demo/grading.
 

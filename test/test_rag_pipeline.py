@@ -118,6 +118,8 @@ def test_rag_pipeline_invalid_output_uses_fallback():
     assert result.used_fallback is True
     assert result.validation_status == "fallback"
     assert result.validation_errors
+<<<<<<< rag-system
+=======
 
 
 # ---------------------------------------------------------------------------
@@ -377,3 +379,4 @@ def test_build_citations_skips_invalid_raw_entries():
     result = pipeline._build_citations(raw, fallback)
     # Valid entry should be parsed; invalid skipped
     assert result[0].record_id == "r1"
+>>>>>>> main
