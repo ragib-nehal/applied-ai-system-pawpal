@@ -54,7 +54,7 @@ init_state()
 
 col1, col2 = st.columns(2)
 with col1:
-    owner_name = st.text_input("Owner name", value="Jordan")
+    st.session_state.setdefault("tasks_per_pet", {})
 with col2:
     available_time = st.number_input("Available minutes/day", min_value=10, max_value=480, value=120)
 

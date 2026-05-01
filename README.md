@@ -91,3 +91,17 @@ python -m pytest test/
 - All persistent artifacts are local: `data/pawpal.db` and local Chroma directory.
 - The system is designed to be reproducible on a single machine for demo/grading.
 
+## Tests
+
+Run full test suite:
+
+```bash
+python -m pytest test/
+```
+
+## Notes
+
+- If Ollama is unavailable, the pipeline logs failures and falls back to deterministic scheduling.
+- All persistent artifacts are local: `data/pawpal.db` and local Chroma directory.
+- The system is designed to be reproducible on a single machine for demo/grading.
+
