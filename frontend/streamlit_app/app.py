@@ -1,11 +1,77 @@
 from __future__ import annotations
 
+import re
+
 import requests
 import streamlit as st
+
+try:
+    from backend.pawpal_backend.services.validator import CRITICAL_KEYWORDS
+except ImportError:
+    CRITICAL_KEYWORDS = ("med", "medication", "insulin", "pill", "inhaler")
+
+_CRITICAL_TITLE_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(k) for k in CRITICAL_KEYWORDS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def is_critical_title(title: str) -> bool:
+    return bool(_CRITICAL_TITLE_RE.search(title))
 
 
 def priority_badge(priority: str) -> str:
     return {"high": "🔴", "medium": "🟠", "low": "🟢"}.get(priority, "⚪")
+
+
+def render_validation_guidance() -> None:
+    keyword_list = ", ".join(f"`{k}`" for k in CRITICAL_KEYWORDS)
+    with st.expander("ℹ️ How to get a valid, grounded schedule"):
+        st.markdown(
+            "Your inputs are checked against backend rules **after** the model "
+            "generates a schedule. If checks fail twice (initial + one repair "
+            "pass), the app falls back to a deterministic scheduler. The tips "
+            "below help your inputs pass on the first try."
+        )
+
+        st.markdown("**1. Daily time budget**")
+        st.markdown(
+            "- Total scheduled minutes per weekday must not exceed "
+            "**Available minutes/day**.\n"
+            "- Many long *daily* tasks add up fast; raise the budget, shorten "
+            "tasks, or move some to weekly frequency.\n"
+            "- If the limit is exceeded, items may appear under **Dropped Tasks**."
+        )
+
+        st.markdown("**2. Critical / medication tasks**")
+        st.markdown(
+            f"- Task titles containing any of these whole words are treated as "
+            f"**critical** and must appear on the generated schedule with the "
+            f"same pet name and exact title: {keyword_list}.\n"
+            "- Use clear, stable titles (for example, *Insulin injection*) so "
+            "the model does not paraphrase them away.\n"
+            "- Avoid these words in titles unless the task is truly mandatory."
+        )
+
+        st.markdown("**3. Non-empty schedule and citations**")
+        st.markdown(
+            "- The model must return at least one schedule item, and every "
+            "schedule and guidance item must include a citation.\n"
+            "- Add **retrieval context** per pet (medical history, "
+            "medications, constraints, behavior notes) so the model has real "
+            "records to cite. Empty or generic context increases the chance "
+            "of malformed or empty outputs."
+        )
+
+        st.markdown("**4. Reading the runtime status**")
+        st.markdown(
+            "- **valid** — model output passed all checks on the first try.\n"
+            "- **repaired** — first attempt failed, the repair pass succeeded.\n"
+            "- **fallback** — both attempts failed; a rule-based scheduler "
+            "produced the plan. This usually means a budget overflow, a "
+            "missing critical task, or missing citations — not always a lack "
+            "of context."
+        )
 
 
 def init_state() -> None:
@@ -50,7 +116,10 @@ def build_payload(owner_name: str, available_time: int) -> dict:
 st.set_page_config(page_title="PawPal+ RAG", page_icon="🐾", layout="centered")
 st.title("🐾 PawPal+ RAG")
 st.caption("Grounded schedule generation with citations, validation, and fallback safety.")
+st.caption("New here? Open the guide below so the AI schedule passes validation on the first try.")
 init_state()
+
+render_validation_guidance()
 
 api_base = st.text_input("FastAPI base URL", value="http://localhost:8000")
 
@@ -143,6 +212,12 @@ if st.session_state.pets:
         frequency = st.selectbox("Frequency", ["daily", "weekly:Monday", "weekly:Wednesday", "weekly:Friday", "once"])
     preferred_time = st.text_input("Preferred time (HH:MM optional)", value="")
     description = st.text_input("Description", value="")
+    if is_critical_title(task_title):
+        st.info(
+            f"This title is treated as **critical** by the validator. The "
+            f"generated schedule must include exactly **{task_title.strip()}** "
+            f"for **{selected_pet}**, or the run falls back."
+        )
     if st.button("Add Task"):
         task_title = task_title.strip()
         if not task_title:
