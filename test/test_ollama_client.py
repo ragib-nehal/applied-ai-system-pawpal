@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
-from services.ollama_client import OllamaClient
+from backend.pawpal_backend.services.ollama_client import OllamaClient
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ def test_custom_model():
 def test_generate_json_returns_parsed_dict():
     client = OllamaClient()
     expected = {"schedule": [], "guidance": []}
-    with patch("services.ollama_client.requests.post", return_value=_mock_response(expected)) as mock_post:
+    with patch("backend.pawpal_backend.services.ollama_client.requests.post", return_value=_mock_response(expected)) as mock_post:
         result = client.generate_json("sys", "user")
     assert result == expected
     mock_post.assert_called_once()
@@ -70,7 +70,7 @@ def test_generate_json_returns_parsed_dict():
 
 def test_generate_json_sends_correct_payload():
     client = OllamaClient(model="llama3")
-    with patch("services.ollama_client.requests.post", return_value=_mock_response({})) as mock_post:
+    with patch("backend.pawpal_backend.services.ollama_client.requests.post", return_value=_mock_response({})) as mock_post:
         client.generate_json("system prompt", "user prompt")
     call_kwargs = mock_post.call_args
     sent_json = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json") or call_kwargs[0][1]
@@ -86,7 +86,7 @@ def test_generate_json_sends_correct_payload():
 
 def test_generate_json_posts_to_correct_url():
     client = OllamaClient(base_url="http://myhost:11434")
-    with patch("services.ollama_client.requests.post", return_value=_mock_response({})) as mock_post:
+    with patch("backend.pawpal_backend.services.ollama_client.requests.post", return_value=_mock_response({})) as mock_post:
         client.generate_json("s", "u")
     url = mock_post.call_args[0][0]
     assert url == "http://myhost:11434/api/chat"
@@ -94,7 +94,7 @@ def test_generate_json_posts_to_correct_url():
 
 def test_generate_json_uses_timeout_180():
     client = OllamaClient()
-    with patch("services.ollama_client.requests.post", return_value=_mock_response({})) as mock_post:
+    with patch("backend.pawpal_backend.services.ollama_client.requests.post", return_value=_mock_response({})) as mock_post:
         client.generate_json("s", "u")
     call_kwargs = mock_post.call_args
     timeout = call_kwargs.kwargs.get("timeout") or call_kwargs[1].get("timeout")
@@ -110,7 +110,7 @@ def test_generate_json_handles_empty_message_content():
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"message": {"content": "{}"}}
     mock_resp.raise_for_status = MagicMock()
-    with patch("services.ollama_client.requests.post", return_value=mock_resp):
+    with patch("backend.pawpal_backend.services.ollama_client.requests.post", return_value=mock_resp):
         result = client.generate_json("s", "u")
     assert result == {}
 
@@ -120,7 +120,7 @@ def test_generate_json_handles_missing_message_key():
     mock_resp = MagicMock()
     mock_resp.json.return_value = {}  # no "message" key
     mock_resp.raise_for_status = MagicMock()
-    with patch("services.ollama_client.requests.post", return_value=mock_resp):
+    with patch("backend.pawpal_backend.services.ollama_client.requests.post", return_value=mock_resp):
         result = client.generate_json("s", "u")
     assert result == {}
 
@@ -133,7 +133,7 @@ def test_generate_json_raises_on_http_error():
     import requests as req_module
 
     client = OllamaClient()
-    with patch("services.ollama_client.requests.post", return_value=_mock_error_response(500)):
+    with patch("backend.pawpal_backend.services.ollama_client.requests.post", return_value=_mock_error_response(500)):
         with pytest.raises(req_module.HTTPError):
             client.generate_json("s", "u")
 
@@ -143,6 +143,6 @@ def test_generate_json_raises_on_json_decode_error():
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"message": {"content": "not valid json {"}}
     mock_resp.raise_for_status = MagicMock()
-    with patch("services.ollama_client.requests.post", return_value=mock_resp):
+    with patch("backend.pawpal_backend.services.ollama_client.requests.post", return_value=mock_resp):
         with pytest.raises(json.JSONDecodeError):
             client.generate_json("s", "u")

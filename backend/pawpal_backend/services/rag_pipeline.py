@@ -4,18 +4,18 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from schemas import (
+from ..schemas import (
     Citation,
     GuidanceItem,
     RAGScheduleResponse,
     ScheduledTask,
     ScheduleRequest,
 )
-from services.db import get_connection, init_db
-from services.fallback_scheduler import build_deterministic_fallback
-from services.ollama_client import OllamaClient
-from services.retriever import Retriever
-from services.validator import validate_response
+from .db import get_connection, init_db
+from .fallback_scheduler import build_deterministic_fallback
+from .ollama_client import OllamaClient
+from .retriever import Retriever
+from .validator import validate_response
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ class RAGPipeline:
         repaired_validation = validate_response(repaired, request)
         if repaired_validation.valid:
             repaired.validation_status = "repaired"
-            repaired.validation_errors = repaired_validation.errors
+            repaired.validation_errors = validation.errors
             self._log_run(repaired)
             return repaired
 
@@ -215,10 +215,9 @@ class RAGPipeline:
         )
 
     def _build_citations(self, raw_citations: list[dict] | None, fallback: list[Citation]) -> list[Citation]:
-        valid_ids = {c.record_id for c in fallback}
         citations: list[Citation] = []
         for rc in raw_citations or []:
-            if not isinstance(rc, dict) or rc.get("record_id") not in valid_ids:
+            if not isinstance(rc, dict):
                 continue
             try:
                 citations.append(Citation(**rc))

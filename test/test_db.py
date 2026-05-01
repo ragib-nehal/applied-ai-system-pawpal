@@ -7,8 +7,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
-from schemas import RetrievalRecordInput
-from services.db import (
+from backend.pawpal_backend.schemas import RetrievalRecordInput
+from backend.pawpal_backend.services.db import (
     get_connection,
     init_db,
     load_all_records,

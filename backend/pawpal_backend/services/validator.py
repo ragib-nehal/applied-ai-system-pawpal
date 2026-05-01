@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 
-from schemas import RAGScheduleResponse, ScheduleRequest, ValidationResult
+from ..schemas import RAGScheduleResponse, ScheduleRequest, ValidationResult
 
 
 CRITICAL_KEYWORDS = ("med", "medication", "insulin", "pill", "inhaler")

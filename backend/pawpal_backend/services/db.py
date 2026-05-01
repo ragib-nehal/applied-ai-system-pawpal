@@ -3,10 +3,10 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from schemas import RetrievalRecordInput
+from ..schemas import RetrievalRecordInput
 
 
-DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "pawpal.db"
+DEFAULT_DB_PATH = Path(__file__).resolve().parents[3] / "data" / "pawpal.db"
 
 
 def get_connection(db_path: Path | str = DEFAULT_DB_PATH) -> sqlite3.Connection:

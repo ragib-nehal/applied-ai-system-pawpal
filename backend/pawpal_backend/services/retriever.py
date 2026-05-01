@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from schemas import Citation, RetrievalRecordInput
-from services.db import load_all_records, upsert_retrieval_records
+from ..schemas import Citation, RetrievalRecordInput
+from .db import load_all_records, upsert_retrieval_records
 
 
 class Retriever:
     """Local retriever with Chroma-first strategy and lexical fallback."""
 
     def __init__(self, chroma_dir: Path | None = None):
-        self._chroma_dir = chroma_dir or (Path(__file__).resolve().parent.parent / "data" / "chroma")
+        self._chroma_dir = chroma_dir or (Path(__file__).resolve().parents[3] / "data" / "chroma")
         self._collection_name = "pawpal_pet_context"
 
     def ingest(self, records: list[RetrievalRecordInput]) -> None:

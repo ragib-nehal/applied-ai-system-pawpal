@@ -3,8 +3,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from schemas import Citation, PetInput, ScheduleRequest, TaskInput
-from services.fallback_scheduler import build_deterministic_fallback
+from backend.pawpal_backend.schemas import Citation, PetInput, ScheduleRequest, TaskInput
+from backend.pawpal_backend.services.fallback_scheduler import build_deterministic_fallback
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ def _request(available_time=120, pets=None):
 # ---------------------------------------------------------------------------
 
 def test_returns_rag_schedule_response():
-    from schemas import RAGScheduleResponse
+    from backend.pawpal_backend.schemas import RAGScheduleResponse
     request = _request()
     citations_by_pet = {"Buddy": [_cite()]}
     result = build_deterministic_fallback(request, citations_by_pet, validation_errors=[])

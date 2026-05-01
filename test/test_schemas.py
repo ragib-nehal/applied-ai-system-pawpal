@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 from pydantic import ValidationError
 
-from schemas import (
+from backend.pawpal_backend.schemas import (
     Citation,
     GuidanceItem,
     PetInput,
