@@ -1,3 +1,27 @@
+"""Deterministic legacy scheduler — the fallback engine for the RAG pipeline.
+
+This module is invoked when the RAG pipeline (services/rag_pipeline.py) cannot
+produce a valid LLM-generated schedule. The full path:
+
+    Streamlit / FastAPI request
+      -> RAGPipeline.run()
+        -> Ollama LLM generates schedule (services/ollama_client.py)
+        -> validator (services/validator.py) checks citations,
+           time-budget, critical medication tasks
+        -> if invalid: one repair pass with errors appended to the prompt
+        -> if still invalid: services/fallback_scheduler.py builds
+           Owner / Pet / Task here and runs
+           OwnerScheduler.generate_consolidated_schedule().
+
+The fallback response is returned with model_provider='deterministic-fallback',
+validation_status='fallback', and used_fallback=True so the UI / metrics can
+flag it as a non-LLM result.
+
+See also:
+- services/fallback_scheduler.py — the bridge that calls into this module.
+- services/rag_pipeline.py — the caller that decides when to invoke the bridge.
+- CLAUDE.md "Deterministic fallback" section — high-level architecture note.
+"""
 from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field

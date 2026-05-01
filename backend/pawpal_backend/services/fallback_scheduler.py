@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pawpal_system import Owner, OwnerScheduler, Pet, Task
+from .legacy_scheduler import Owner, OwnerScheduler, Pet, Task
 from ..schemas import Citation, GuidanceItem, RAGScheduleResponse, ScheduledTask, ScheduleRequest
 
 

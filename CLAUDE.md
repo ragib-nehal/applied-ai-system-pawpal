@@ -45,14 +45,14 @@ backend/pawpal_backend/        # FastAPI app + RAG pipeline (importable Python p
     rag_pipeline.py            #   Orchestration: retrieve → generate → validate → repair → fallback
     retriever.py               #   Chroma-first retriever, lexical SQLite fallback
     validator.py               #   Hard-rule validation
-    fallback_scheduler.py      #   Bridge to legacy pawpal_system scheduler
+    fallback_scheduler.py      #   Bridge to legacy_scheduler (deterministic fallback)
+    legacy_scheduler.py        #   Pre-RAG deterministic scheduler — invoked when validation fails twice
     ollama_client.py           #   Thin wrapper over POST /api/chat
     db.py                      #   SQLite schema + helpers (data/pawpal.db)
     reset.py                   #   Wipe SQLite + Chroma
 frontend/streamlit_app/app.py  # Streamlit UI; calls FastAPI over HTTP
 scripts/main.py                # CLI runner (sample request → pipeline)
 scripts/eval_runner.py         # Reliability metrics harness
-pawpal_system.py               # Legacy pre-RAG scheduler — still load-bearing as fallback
 data/                          # Local artifacts: pawpal.db, chroma/
 test/                          # Tests at project root; insert ".." into sys.path then import backend.pawpal_backend.*
 ```
@@ -121,13 +121,13 @@ Thin wrapper over `POST /api/chat` on `http://localhost:11434` with `format: "js
 
 ### Deterministic fallback (`services/fallback_scheduler.py`)
 
-Bridges the new pipeline to the legacy `pawpal_system.py` scheduler:
+Bridges the new pipeline to the legacy `legacy_scheduler.py` scheduler:
 - Builds `Owner` / `Pet` / `Task` from the request, runs `OwnerScheduler.generate_consolidated_schedule()` which greedily fits tasks across days respecting `available_time_per_day`.
 - Converts the output back into `RAGScheduleResponse` with `model_provider="deterministic-fallback"`, `validation_status="fallback"`, `used_fallback=True`. Citations come from `citations_by_pet` (first hit per pet) or a `fallback-none` placeholder.
 
-### Legacy module (`pawpal_system.py`)
+### Legacy module (`services/legacy_scheduler.py`)
 
-Original pre-RAG scheduler at the project root. **Still load-bearing** as the fallback engine — do not delete. Imported as a top-level module (`from pawpal_system import ...`) — kept at the root so both `scripts/` and `backend/pawpal_backend/services/fallback_scheduler.py` can reach it.
+Original pre-RAG scheduler. **Still load-bearing** as the fallback engine — do not delete. Lives in `backend/pawpal_backend/services/` next to its only Python consumer, `fallback_scheduler.py`, which imports it via `from .legacy_scheduler import Owner, OwnerScheduler, Pet, Task`. Tests import it via `from backend.pawpal_backend.services.legacy_scheduler import ...`.
 
 It also contains a tracked "Tier B" cleanup backlog of soft-deactivated methods (raise `NotImplementedError`) that are referenced by `docs/Mermaid.js`. Read the header comment in the file before removing any of them: `docs/Mermaid.js` must be updated in the same change.
 

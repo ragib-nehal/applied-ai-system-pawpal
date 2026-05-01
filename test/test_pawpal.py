@@ -3,7 +3,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from datetime import date, timedelta
-from pawpal_system import Task, Pet, Owner, Scheduler, OwnerScheduler
+from backend.pawpal_backend.services.legacy_scheduler import Task, Pet, Owner, Scheduler, OwnerScheduler
 
 
 def make_task(**kwargs):
