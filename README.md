@@ -1,6 +1,6 @@
-# PawPal+ RAG
+# FetchPlan
 
-PawPal+ RAG is a local-first applied AI system for pet-care scheduling. It uses Retrieval-Augmented Generation (RAG) to ground schedule decisions in pet context (medical history, medications, constraints, behavior notes), enforces validation guardrails, and falls back safely to deterministic scheduling when needed.
+FetchPlan is a local-first applied AI system for pet-care scheduling, powered by Retrieval-Augmented Generation. It uses Retrieval-Augmented Generation (RAG) to ground schedule decisions in pet context (medical history, medications, constraints, behavior notes), enforces validation guardrails, and falls back safely to deterministic scheduling when needed.
 
 ## Core Applied-AI Features
 
@@ -81,6 +81,8 @@ Start UI (new terminal):
 ```bash
 streamlit run frontend/streamlit_app/app.py
 ```
+
+The Streamlit UI reads the backend URL from the `FETCHPLAN_API_URL` environment variable; it defaults to `http://localhost:8000` when unset.
 
 Optional CLI run:
 

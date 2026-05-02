@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 
 import requests
@@ -9,6 +10,8 @@ try:
     from backend.pawpal_backend.services.validator import CRITICAL_KEYWORDS
 except ImportError:
     CRITICAL_KEYWORDS = ("med", "medication", "insulin", "pill", "inhaler")
+
+API_BASE = os.environ.get("FETCHPLAN_API_URL", "http://localhost:8000").rstrip("/")
 
 _CRITICAL_TITLE_RE = re.compile(
     r"\b(?:" + "|".join(re.escape(k) for k in CRITICAL_KEYWORDS) + r")\b",
@@ -26,7 +29,7 @@ def priority_badge(priority: str) -> str:
 
 def render_validation_guidance() -> None:
     keyword_list = ", ".join(f"`{k}`" for k in CRITICAL_KEYWORDS)
-    with st.expander("ℹ️ How to get a valid, grounded schedule"):
+    with st.expander("Tips for a better schedule"):
         st.markdown(
             "Your inputs are checked against backend rules **after** the model "
             "generates a schedule. If checks fail twice (initial + one repair "
@@ -74,6 +77,45 @@ def render_validation_guidance() -> None:
         )
 
 
+def render_settings_sidebar() -> None:
+    with st.sidebar:
+        st.header("Settings")
+        with st.expander("Reset demo data", expanded=False):
+            st.caption(
+                "Wipes the local SQLite + Chroma stores so demos start "
+                "from a clean slate. Destructive and irreversible."
+            )
+            if st.session_state.get("reset_confirm"):
+                st.warning(
+                    "This will permanently delete all retrieval records and "
+                    "pipeline run history."
+                )
+                bc1, bc2 = st.columns(2)
+                with bc1:
+                    if st.button("Confirm wipe", type="primary", key="reset_confirm_btn"):
+                        try:
+                            response = requests.post(
+                                f"{API_BASE}/admin/reset", timeout=30
+                            )
+                            response.raise_for_status()
+                            st.session_state.rag_result = None
+                            st.session_state.reset_confirm = False
+                            st.success(
+                                response.json().get("message", "Reset complete.")
+                            )
+                        except Exception as exc:
+                            st.session_state.reset_confirm = False
+                            st.error(f"Reset failed: {exc}")
+                with bc2:
+                    if st.button("Cancel", key="reset_cancel_btn"):
+                        st.session_state.reset_confirm = False
+                        st.rerun()
+            else:
+                if st.button("Reset demo data", key="reset_arm_btn"):
+                    st.session_state.reset_confirm = True
+                    st.rerun()
+
+
 def init_state() -> None:
     st.session_state.setdefault("pets", [])
     st.session_state.setdefault("tasks_per_pet", {})
@@ -113,66 +155,39 @@ def build_payload(owner_name: str, available_time: int) -> dict:
     }
 
 
-st.set_page_config(page_title="PawPal+ RAG", page_icon="🐾", layout="centered")
-st.title("🐾 PawPal+ RAG")
-st.caption("Grounded schedule generation with citations, validation, and fallback safety.")
-st.caption("New here? Open the guide below so the AI schedule passes validation on the first try.")
+st.set_page_config(page_title="FetchPlan", page_icon="🐾", layout="centered")
+st.title("🐾 FetchPlan")
+st.caption("Personalized weekly care schedules for your pets.")
 init_state()
+render_settings_sidebar()
 
-render_validation_guidance()
-
-api_base = st.text_input("FastAPI base URL", value="http://localhost:8000")
-
-with st.expander("⚠️ Danger zone — Reset demo data"):
-    st.caption(
-        "Wipes the FastAPI server's local SQLite + Chroma stores so demos start "
-        "from a clean slate. Destructive and irreversible — local demo only."
-    )
-    if st.session_state.get("reset_confirm"):
-        st.warning("This will permanently delete all retrieval records and pipeline run history.")
-        bc1, bc2 = st.columns(2)
-        with bc1:
-            if st.button("Confirm wipe", type="primary", key="reset_confirm_btn"):
-                try:
-                    response = requests.post(
-                        f"{api_base.rstrip('/')}/admin/reset", timeout=30
-                    )
-                    response.raise_for_status()
-                    st.session_state.rag_result = None
-                    st.session_state.reset_confirm = False
-                    st.success(response.json().get("message", "Reset complete."))
-                except Exception as exc:
-                    st.session_state.reset_confirm = False
-                    st.error(f"Reset failed: {exc}")
-        with bc2:
-            if st.button("Cancel", key="reset_cancel_btn"):
-                st.session_state.reset_confirm = False
-                st.rerun()
-    else:
-        if st.button("Reset demo data", key="reset_arm_btn"):
-            st.session_state.reset_confirm = True
-            st.rerun()
-
+st.subheader("Your details")
 col1, col2 = st.columns(2)
 with col1:
     owner_name = st.text_input("Owner name", value="Jordan")
 with col2:
-    available_time = st.number_input("Available minutes/day", min_value=10, max_value=480, value=120)
+    available_time = st.number_input(
+        "Available minutes/day", min_value=10, max_value=480, value=120
+    )
 
 st.divider()
 st.subheader("Add a Pet")
-pc1, pc2, pc3, pc4 = st.columns(4)
-with pc1:
-    pet_name = st.text_input("Pet name", value="Mochi")
-with pc2:
-    species = st.selectbox("Species", ["dog", "cat", "other"])
-with pc3:
-    age = st.number_input("Age", min_value=0, max_value=30, value=2)
-with pc4:
-    energy = st.selectbox("Energy", ["low", "medium", "high"], index=1)
-special_needs = st.text_input("Special needs (comma-separated)", value="")
+with st.form("add_pet_form", clear_on_submit=True):
+    pc1, pc2, pc3, pc4 = st.columns(4)
+    with pc1:
+        pet_name = st.text_input("Pet name", value="", placeholder="e.g. Mochi")
+    with pc2:
+        species = st.selectbox("Species", ["dog", "cat", "other"])
+    with pc3:
+        age = st.number_input("Age", min_value=0, max_value=30, value=2)
+    with pc4:
+        energy = st.selectbox("Energy", ["low", "medium", "high"], index=1)
+    special_needs = st.text_input(
+        "Special needs (comma-separated)", value="", placeholder="e.g. arthritis, allergies"
+    )
+    add_pet_submitted = st.form_submit_button("Add Pet")
 
-if st.button("Add Pet"):
+if add_pet_submitted:
     pet_name = pet_name.strip()
     if not pet_name:
         st.warning("Please enter a pet name.")
@@ -200,25 +215,43 @@ if st.session_state.pets:
 st.divider()
 st.subheader("Add Task")
 if st.session_state.pets:
-    selected_pet = st.selectbox("Assign to pet", [p["name"] for p in st.session_state.pets], key="task_pet")
-    tc1, tc2, tc3, tc4 = st.columns(4)
-    with tc1:
-        task_title = st.text_input("Task title", value="Morning walk")
-    with tc2:
-        duration = st.number_input("Duration (min)", min_value=1, max_value=240, value=20)
-    with tc3:
-        priority = st.selectbox("Priority", ["low", "medium", "high"], index=2)
-    with tc4:
-        frequency = st.selectbox("Frequency", ["daily", "weekly:Monday", "weekly:Wednesday", "weekly:Friday", "once"])
-    preferred_time = st.text_input("Preferred time (HH:MM optional)", value="")
-    description = st.text_input("Description", value="")
-    if is_critical_title(task_title):
-        st.info(
-            f"This title is treated as **critical** by the validator. The "
-            f"generated schedule must include exactly **{task_title.strip()}** "
-            f"for **{selected_pet}**, or the run falls back."
+    with st.form("add_task_form", clear_on_submit=True):
+        selected_pet = st.selectbox(
+            "Assign to pet",
+            [p["name"] for p in st.session_state.pets],
+            key="task_pet",
         )
-    if st.button("Add Task"):
+        tc1, tc2, tc3, tc4 = st.columns(4)
+        with tc1:
+            task_title = st.text_input(
+                "Task title", value="", placeholder="e.g. Morning walk"
+            )
+        with tc2:
+            duration = st.number_input(
+                "Duration (min)", min_value=1, max_value=240, value=20
+            )
+        with tc3:
+            priority = st.selectbox("Priority", ["low", "medium", "high"], index=2)
+        with tc4:
+            frequency = st.selectbox(
+                "Frequency",
+                ["daily", "weekly:Monday", "weekly:Wednesday", "weekly:Friday", "once"],
+            )
+        preferred_time = st.text_input(
+            "Preferred time (HH:MM optional)", value="", placeholder="e.g. 08:00"
+        )
+        description = st.text_input(
+            "Description", value="", placeholder="optional notes"
+        )
+        st.caption(
+            "Tip: titles containing "
+            + ", ".join(f"*{k}*" for k in CRITICAL_KEYWORDS)
+            + " are treated as **critical** by the validator and must appear "
+            "on the schedule for the assigned pet, or the run falls back."
+        )
+        add_task_submitted = st.form_submit_button("Add Task")
+
+    if add_task_submitted:
         task_title = task_title.strip()
         if not task_title:
             st.warning("Please enter a task title.")
@@ -258,10 +291,23 @@ if st.session_state.tasks_per_pet:
 st.divider()
 st.subheader("Add Retrieval Context")
 if st.session_state.pets:
-    context_pet = st.selectbox("Pet for context", [p["name"] for p in st.session_state.pets], key="context_pet")
-    section = st.selectbox("Section", ["medical_history", "medications", "constraints", "behavior_notes"])
-    content = st.text_area("Context content", placeholder="Example: Diabetes history, insulin schedule, avoid late-night feeding.")
-    if st.button("Add Context Record"):
+    with st.form("add_context_form", clear_on_submit=True):
+        context_pet = st.selectbox(
+            "Pet for context",
+            [p["name"] for p in st.session_state.pets],
+            key="context_pet",
+        )
+        section = st.selectbox(
+            "Section",
+            ["medical_history", "medications", "constraints", "behavior_notes"],
+        )
+        content = st.text_area(
+            "Context content",
+            placeholder="Example: Diabetes history, insulin schedule, avoid late-night feeding.",
+        )
+        add_context_submitted = st.form_submit_button("Add Context Record")
+
+    if add_context_submitted:
         if content.strip():
             st.session_state.records_per_pet[context_pet].append(
                 {"section": section, "content": content.strip()}
@@ -269,6 +315,8 @@ if st.session_state.pets:
             st.success("Context record added.")
         else:
             st.warning("Context content cannot be empty.")
+else:
+    st.info("Add at least one pet before context records.")
 
 for pet_name, records in st.session_state.records_per_pet.items():
     if records:
@@ -277,9 +325,9 @@ for pet_name, records in st.session_state.records_per_pet.items():
             st.write(f"- `{rec['section']}`: {rec['content'][:120]}")
 
 st.divider()
-st.subheader("Generate RAG Schedule")
+st.subheader("Generate Schedule")
 
-if st.button("Generate Schedule via RAG"):
+if st.button("Generate Schedule"):
     payload = build_payload(owner_name, int(available_time))
     all_tasks = [t for p in payload["pets"] for t in p["tasks"]]
     if not payload["pets"]:
@@ -288,10 +336,10 @@ if st.button("Generate Schedule via RAG"):
         st.error("Add at least one task.")
     else:
         try:
-            response = requests.post(f"{api_base.rstrip('/')}/schedule", json=payload, timeout=240)
+            response = requests.post(f"{API_BASE}/schedule", json=payload, timeout=240)
             response.raise_for_status()
             st.session_state.rag_result = response.json()
-            st.success("RAG schedule generated.")
+            st.success("Schedule generated.")
         except Exception as exc:
             st.error(f"Failed to call API: {exc}")
 
@@ -346,3 +394,6 @@ if result:
         st.table(dropped)
     else:
         st.success("No dropped tasks.")
+
+st.divider()
+render_validation_guidance()
