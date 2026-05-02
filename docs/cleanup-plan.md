@@ -1,8 +1,8 @@
 # Phase 2 Cleanup — Removal Plan
 
-_Authored 2026-04-29. Companion to the `CLEANUP BACKLOG` block at the top of `pawpal_system.py` and the `LEGACY_ARCHIVE` markers throughout it._
+_Authored 2026-04-29. Companion to the `CLEANUP BACKLOG` block at the top of `backend/pawpal_backend/services/legacy_scheduler.py` and the `LEGACY_ARCHIVE` markers throughout it._
 
-This plan describes how to convert the 12 soft-deactivated symbols in `pawpal_system.py` into full deletions. Read this together with the `CLEANUP BACKLOG` block in source — that block is the live registry; this document is the procedure.
+This plan describes how to convert the 12 soft-deactivated symbols in `backend/pawpal_backend/services/legacy_scheduler.py` into full deletions. Read this together with the `CLEANUP BACKLOG` block in source — that block is the live registry; this document is the procedure.
 
 ## 1. Calibration
 
@@ -18,7 +18,7 @@ Nothing in this batch is currently eligible for Phase 2; everything must transit
 For each Tier B symbol (or cohort, see §5), in a single small PR:
 
 1. Delete the symbol's row from `docs/Mermaid.js` (UML class diagram).
-2. Move its line in `pawpal_system.py`'s `CLEANUP BACKLOG` block from the Tier B list up into Tier A.
+2. Move its line in `backend/pawpal_backend/services/legacy_scheduler.py`'s `CLEANUP BACKLOG` block from the Tier B list up into Tier A.
 3. Update its inline header from `(Tier B)` to `(Tier A)`. Drop the `Last consumer: docs/Mermaid.js:<line>` line; replace with `Last consumer: none (UML reference removed in <commit-sha>)`.
 4. Run `pytest test/`, `python3 main.py`, and the AppTest smoketest.
 
@@ -36,7 +36,7 @@ git grep -nE \
   -- '*.py' '*.md' 'docs/'
 ```
 
-Restricted to symbols still archived at sweep time. Expected output: zero hits outside `pawpal_system.py` itself. Any hit halts the deletion and triggers a root-cause sweep.
+Restricted to symbols still archived at sweep time. Expected output: zero hits outside `backend/pawpal_backend/services/legacy_scheduler.py` itself. Any hit halts the deletion and triggers a root-cause sweep.
 
 ### Gate 2 — Tests cover replacement behavior
 
@@ -104,7 +104,7 @@ Symbols: <list>
 
 Preconditions (all must pass before merging):
 [ ] All symbols in this cohort are in Tier A (UML rows already removed)
-[ ] Gate 1: git grep sweep returns zero hits outside pawpal_system.py
+[ ] Gate 1: git grep sweep returns zero hits outside legacy_scheduler.py
 [ ] Gate 2: replacement tests listed and green:
       - <test_name_1>
       - <test_name_2>
@@ -113,7 +113,7 @@ Preconditions (all must pass before merging):
 Deletion steps:
 [ ] Delete each NotImplementedError stub method
 [ ] Delete the LEGACY_ARCHIVE_START/END block above each
-[ ] Remove the corresponding rows from CLEANUP BACKLOG (top of pawpal_system.py)
+[ ] Remove the corresponding rows from CLEANUP BACKLOG (top of legacy_scheduler.py)
 [ ] If CLEANUP BACKLOG is now empty, delete the entire header block
 [ ] Verify pytest: <N>/<N> passing
 [ ] Verify main.py runs end-to-end

@@ -1,9 +1,12 @@
 import os
 import sys
+import json
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from backend.pawpal_backend.schemas import Citation, PetInput, RetrievalRecordInput, ScheduleRequest, TaskInput
+from backend.pawpal_backend.services import db as db_module
+from backend.pawpal_backend.services import rag_pipeline as rag_module
 from backend.pawpal_backend.services.rag_pipeline import RAGPipeline
 
 
@@ -20,6 +23,19 @@ class FakeRetriever:
                 score=0.9,
             )
         ]
+
+
+class RecordingRetriever(FakeRetriever):
+    def __init__(self):
+        self.ingested_records = None
+        self.retrieve_calls = []
+
+    def ingest(self, records):
+        self.ingested_records = records
+
+    def retrieve(self, pet_name: str, query: str, top_k: int = 4):
+        self.retrieve_calls.append((pet_name, query, top_k))
+        return super().retrieve(pet_name, query, top_k)
 
 
 class ValidClient:
@@ -58,6 +74,114 @@ class ValidClient:
                 }
             ],
             "dropped_tasks": [],
+        }
+
+
+class OverlappingDroppedClient:
+    def generate_json(self, system_prompt: str, user_prompt: str):
+        return {
+            "schedule": [
+                {
+                    "pet": "Buddy",
+                    "day": "Monday",
+                    "time": "08:00",
+                    "title": "Medication",
+                    "duration_minutes": 10,
+                    "priority": "high",
+                    "reason": "Medication is critical and should be done first.",
+                    "citations": [
+                        {
+                            "record_id": "Buddy-ctx-1",
+                            "section": "medical_history",
+                            "snippet": "Buddy context snippet",
+                        }
+                    ],
+                },
+                {
+                    "pet": "Buddy",
+                    "day": "Monday",
+                    "time": "08:10",
+                    "title": "Morning walk",
+                    "duration_minutes": 20,
+                    "priority": "medium",
+                    "reason": "Exercise if time allows.",
+                    "citations": [
+                        {
+                            "record_id": "Buddy-ctx-1",
+                            "section": "medical_history",
+                            "snippet": "Buddy context snippet",
+                        }
+                    ],
+                },
+            ],
+            "guidance": [
+                {
+                    "pet": "Buddy",
+                    "title": "Care tip for Buddy",
+                    "detail": "Keep medication timing consistent.",
+                    "citations": [
+                        {
+                            "record_id": "Buddy-ctx-1",
+                            "section": "medical_history",
+                            "snippet": "Buddy context snippet",
+                        }
+                    ],
+                }
+            ],
+            "dropped_tasks": [
+                {
+                    "day": "Monday",
+                    "pet": "Buddy",
+                    "title": "Morning walk",
+                    "duration_minutes": 20,
+                }
+            ],
+        }
+
+
+class DistinctDroppedClient:
+    def generate_json(self, system_prompt: str, user_prompt: str):
+        return {
+            "schedule": [
+                {
+                    "pet": "Buddy",
+                    "day": "Monday",
+                    "time": "08:00",
+                    "title": "Medication",
+                    "duration_minutes": 10,
+                    "priority": "high",
+                    "reason": "Medication is critical and should be done first.",
+                    "citations": [
+                        {
+                            "record_id": "Buddy-ctx-1",
+                            "section": "medical_history",
+                            "snippet": "Buddy context snippet",
+                        }
+                    ],
+                }
+            ],
+            "guidance": [
+                {
+                    "pet": "Buddy",
+                    "title": "Care tip for Buddy",
+                    "detail": "Keep medication timing consistent.",
+                    "citations": [
+                        {
+                            "record_id": "Buddy-ctx-1",
+                            "section": "medical_history",
+                            "snippet": "Buddy context snippet",
+                        }
+                    ],
+                }
+            ],
+            "dropped_tasks": [
+                {
+                    "day": "Monday",
+                    "pet": "Buddy",
+                    "title": "Morning walk",
+                    "duration_minutes": 20,
+                }
+            ],
         }
 
 
@@ -110,6 +234,31 @@ def test_rag_pipeline_valid_output_stays_non_fallback():
     assert result.validation_status in {"valid", "repaired"}
     assert result.schedule
     assert result.schedule[0].citations
+
+
+def test_rag_pipeline_removes_dropped_task_from_schedule_payload():
+    pipeline = RAGPipeline(retriever=FakeRetriever(), llm_client=OverlappingDroppedClient())
+    result = pipeline.run(make_request())
+
+    assert result.used_fallback is False
+    assert result.validation_status == "valid"
+    assert [item.title for item in result.schedule] == ["Medication"]
+    assert result.dropped_tasks == [
+        {
+            "day": "Monday",
+            "pet": "Buddy",
+            "title": "Morning walk",
+            "duration_minutes": 20,
+        }
+    ]
+
+
+def test_rag_pipeline_preserves_distinct_scheduled_and_dropped_tasks():
+    pipeline = RAGPipeline(retriever=FakeRetriever(), llm_client=DistinctDroppedClient())
+    result = pipeline.run(make_request())
+
+    assert [item.title for item in result.schedule] == ["Medication"]
+    assert [task["title"] for task in result.dropped_tasks] == ["Morning walk"]
 
 
 def test_rag_pipeline_invalid_output_uses_fallback():
@@ -297,6 +446,97 @@ def test_rag_pipeline_run_without_retrieval_records():
     # Should not raise
     result = pipeline.run(request_no_records)
     assert result is not None
+
+
+def test_rag_pipeline_ingests_retrieval_records_when_present():
+    retriever = RecordingRetriever()
+    pipeline = RAGPipeline(retriever=retriever, llm_client=ValidClient())
+    request = make_request()
+
+    pipeline.run(request)
+
+    assert retriever.ingested_records == request.retrieval_records
+
+
+def test_rag_pipeline_retrieves_context_for_each_pet():
+    retriever = RecordingRetriever()
+    pipeline = RAGPipeline(retriever=retriever, llm_client=ValidClient())
+    request = ScheduleRequest(
+        owner_name="Alex",
+        available_time_per_day=60,
+        pets=[
+            PetInput(
+                name="Buddy",
+                species="Dog",
+                age=3,
+                tasks=[TaskInput(title="Medication", duration_minutes=10, priority="high")],
+            ),
+            PetInput(
+                name="Whiskers",
+                species="Cat",
+                age=5,
+                tasks=[TaskInput(title="Play", duration_minutes=10, priority="low")],
+            ),
+        ],
+    )
+
+    pipeline.run(request)
+
+    assert [call[0] for call in retriever.retrieve_calls] == ["Buddy", "Whiskers"]
+    assert all(call[2] == 4 for call in retriever.retrieve_calls)
+
+
+def test_build_generation_prompt_contains_request_context_and_schema():
+    pipeline = RAGPipeline(retriever=FakeRetriever(), llm_client=ValidClient())
+    request = make_request()
+    citations_by_pet = {"Buddy": [Citation(record_id="ctx", section="medical_history", snippet="daily meds")]}
+
+    prompt = pipeline._build_generation_prompt(request, citations_by_pet)
+    payload = json.loads(prompt)
+
+    assert payload["owner_name"] == "Alex"
+    assert payload["pets"][0]["name"] == "Buddy"
+    assert payload["retrieval_context"]["Buddy"][0]["record_id"] == "ctx"
+    assert "required_output_schema" in payload
+    assert "citations" in payload["required_output_schema"]["schedule"][0]
+
+
+def test_log_run_writes_pipeline_telemetry(monkeypatch, tmp_path):
+    db_path = tmp_path / "pawpal.db"
+    db_module.init_db(db_path)
+    monkeypatch.setattr(rag_module, "init_db", lambda: None)
+    monkeypatch.setattr(rag_module, "get_connection", lambda: db_module.get_connection(db_path))
+    pipeline = RAGPipeline(retriever=FakeRetriever(), llm_client=ValidClient())
+    response = pipeline.run(make_request())
+
+    with db_module.get_connection(db_path) as conn:
+        row = conn.execute("SELECT * FROM pipeline_runs").fetchone()
+
+    assert row["model_provider"] == response.model_provider
+    assert row["validation_status"] == response.validation_status
+    assert row["retrieval_context_count"] == response.retrieval_context_count
+
+
+def test_parse_generated_response_dedupes_duplicate_schedule_rows():
+    pipeline = RAGPipeline(retriever=FakeRetriever(), llm_client=ValidClient())
+    raw = ValidClient().generate_json("sys", "user")
+    raw["schedule"].append(dict(raw["schedule"][0]))
+
+    result = pipeline._parse_generated_response(raw, {"Buddy": []})
+
+    assert len(result.schedule) == 1
+
+
+def test_parse_generated_response_skips_non_dict_schedule_and_guidance_rows():
+    pipeline = RAGPipeline(retriever=FakeRetriever(), llm_client=ValidClient())
+    raw = ValidClient().generate_json("sys", "user")
+    raw["schedule"].append("not a dict")
+    raw["guidance"].append(["not", "a", "dict"])
+
+    result = pipeline._parse_generated_response(raw, {"Buddy": []})
+
+    assert [item.title for item in result.schedule] == ["Medication"]
+    assert [guide.title for guide in result.guidance] == ["Care tip for Buddy"]
 
 
 # ---------------------------------------------------------------------------

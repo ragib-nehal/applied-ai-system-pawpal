@@ -1,5 +1,6 @@
 import os
 import sys
+import types
 from pathlib import Path
 from unittest.mock import patch
 
@@ -177,3 +178,103 @@ def test_try_chroma_query_returns_empty_if_dir_missing(tmp_path):
     # Since the dir doesn't exist, _try_chroma_query should return []
     result = retriever._try_chroma_query(pet_name="Buddy", query="medication", top_k=4)
     assert result == []
+
+
+def _install_fake_chroma(monkeypatch, fake_client_factory):
+    fake_chromadb = types.SimpleNamespace(PersistentClient=fake_client_factory)
+    fake_embedding_functions = types.SimpleNamespace(
+        OllamaEmbeddingFunction=lambda model_name: object()
+    )
+    fake_utils = types.SimpleNamespace(embedding_functions=fake_embedding_functions)
+    monkeypatch.setitem(sys.modules, "chromadb", fake_chromadb)
+    monkeypatch.setitem(sys.modules, "chromadb.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "chromadb.utils.embedding_functions", fake_embedding_functions)
+
+
+def test_try_chroma_query_parses_collection_results(monkeypatch, tmp_path):
+    class FakeCollection:
+        def __init__(self):
+            self.where = None
+
+        def query(self, query_texts, n_results, where):
+            self.where = where
+            return {
+                "documents": [["Buddy needs daily medication"]],
+                "metadatas": [[{"section": "medications"}]],
+                "ids": [["chroma-1"]],
+                "distances": [[1.0]],
+            }
+
+    fake_collection = FakeCollection()
+
+    class FakeClient:
+        def __init__(self, path):
+            self.path = path
+
+        def get_or_create_collection(self, name, embedding_function):
+            return fake_collection
+
+    chroma_dir = tmp_path / "chroma"
+    chroma_dir.mkdir()
+    _install_fake_chroma(monkeypatch, FakeClient)
+    retriever = Retriever(chroma_dir=chroma_dir)
+
+    results = retriever._try_chroma_query("Buddy", "medication", top_k=4)
+
+    assert len(results) == 1
+    assert results[0].record_id == "chroma-1"
+    assert results[0].section == "medications"
+    assert results[0].score == pytest.approx(0.5)
+    assert fake_collection.where == {"pet_name": "Buddy"}
+
+
+def test_try_chroma_query_skips_empty_snippets_and_mismatched_rows(monkeypatch, tmp_path):
+    class FakeCollection:
+        def query(self, query_texts, n_results, where):
+            return {
+                "documents": [["", "usable context"]],
+                "metadatas": [[{"section": "ignored"}, {"section": "care"}]],
+                "ids": [["empty-doc", "valid-doc", "missing-doc"]],
+                "distances": [[0.0, 3.0, 1.0]],
+            }
+
+    class FakeClient:
+        def __init__(self, path):
+            self.path = path
+
+        def get_or_create_collection(self, name, embedding_function):
+            return FakeCollection()
+
+    chroma_dir = tmp_path / "chroma"
+    chroma_dir.mkdir()
+    _install_fake_chroma(monkeypatch, FakeClient)
+    retriever = Retriever(chroma_dir=chroma_dir)
+
+    results = retriever._try_chroma_query("Buddy", "medication", top_k=4)
+
+    assert [r.record_id for r in results] == ["valid-doc"]
+    assert results[0].snippet == "usable context"
+
+
+def test_try_chroma_query_returns_empty_when_chroma_raises(monkeypatch, tmp_path):
+    class FakeClient:
+        def __init__(self, path):
+            raise RuntimeError("chroma unavailable")
+
+    chroma_dir = tmp_path / "chroma"
+    chroma_dir.mkdir()
+    _install_fake_chroma(monkeypatch, FakeClient)
+    retriever = Retriever(chroma_dir=chroma_dir)
+
+    assert retriever._try_chroma_query("Buddy", "medication", top_k=4) == []
+
+
+def test_try_chroma_upsert_ignores_chroma_exceptions(monkeypatch, tmp_path):
+    class FakeClient:
+        def __init__(self, path):
+            raise RuntimeError("cannot open chroma")
+
+    _install_fake_chroma(monkeypatch, FakeClient)
+    retriever = Retriever(chroma_dir=tmp_path / "chroma")
+
+    retriever._try_chroma_upsert([_record("r1", "Buddy", "medications", "daily medication")])
