@@ -15,7 +15,7 @@ from .db import get_connection, init_db
 from .fallback_scheduler import build_deterministic_fallback
 from .ollama_client import OllamaClient
 from .retriever import Retriever
-from .validator import validate_response
+from .validator import scheduled_task_key, scheduled_task_matches_dropped_task, validate_response
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,10 @@ class RAGPipeline:
             for item in raw.get("schedule", [])
             if (task := self._parse_schedule_item(item, citations_by_pet)) is not None
         ]
+        dropped_tasks = [
+            task for task in raw.get("dropped_tasks", []) if isinstance(task, dict)
+        ]
+        schedule_items = self._reconcile_schedule_items(schedule_items, dropped_tasks)
         guidance_items = [
             guide
             for g in raw.get("guidance", [])
@@ -109,13 +113,29 @@ class RAGPipeline:
         return RAGScheduleResponse(
             schedule=schedule_items,
             guidance=guidance_items,
-            dropped_tasks=raw.get("dropped_tasks", []),
+            dropped_tasks=dropped_tasks,
             retrieval_context_count=sum(len(v) for v in citations_by_pet.values()),
             model_provider="ollama-qwen2.5",
             validation_status="valid",
             validation_errors=[],
             used_fallback=False,
         )
+
+    def _reconcile_schedule_items(
+        self, schedule_items: list[ScheduledTask], dropped_tasks: list[dict]
+    ) -> list[ScheduledTask]:
+        reconciled: list[ScheduledTask] = []
+        seen: set[tuple[str, str, str, int]] = set()
+        for item in schedule_items:
+            if any(scheduled_task_matches_dropped_task(item, dropped) for dropped in dropped_tasks):
+                continue
+
+            key = scheduled_task_key(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            reconciled.append(item)
+        return reconciled
 
     def _parse_schedule_item(
         self, item: object, citations_by_pet: dict[str, list[Citation]]

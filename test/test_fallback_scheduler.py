@@ -195,8 +195,107 @@ def test_dropped_tasks_populated_when_over_budget():
         ],
     )
     result = build_deterministic_fallback(request, {"Buddy": [_cite()]}, [])
-    # With a 5-minute budget, many tasks won't fit
     assert isinstance(result.dropped_tasks, list)
+    assert {task["title"] for task in result.dropped_tasks} == {"Walk", "Medication"}
+
+
+def test_completed_tasks_are_not_scheduled():
+    request = ScheduleRequest(
+        owner_name="Alex",
+        available_time_per_day=120,
+        pets=[
+            PetInput(
+                name="Buddy",
+                species="Dog",
+                age=3,
+                tasks=[
+                    TaskInput(
+                        title="Already Done",
+                        duration_minutes=10,
+                        priority="high",
+                        frequency="daily",
+                        completed=True,
+                    ),
+                    TaskInput(title="Still Due", duration_minutes=10, priority="medium", frequency="daily"),
+                ],
+            )
+        ],
+    )
+
+    result = build_deterministic_fallback(request, {"Buddy": [_cite()]}, [])
+
+    scheduled_titles = {item.title for item in result.schedule}
+    assert "Already Done" not in scheduled_titles
+    assert "Still Due" in scheduled_titles
+
+
+def test_preferred_times_influence_schedule_order():
+    request = ScheduleRequest(
+        owner_name="Alex",
+        available_time_per_day=120,
+        pets=[
+            PetInput(
+                name="Buddy",
+                species="Dog",
+                age=3,
+                tasks=[
+                    TaskInput(
+                        title="Late Care",
+                        duration_minutes=10,
+                        priority="high",
+                        frequency="daily",
+                        preferred_time="18:00",
+                    ),
+                    TaskInput(
+                        title="Early Care",
+                        duration_minutes=10,
+                        priority="low",
+                        frequency="daily",
+                        preferred_time="07:00",
+                    ),
+                ],
+            )
+        ],
+    )
+
+    result = build_deterministic_fallback(request, {"Buddy": [_cite()]}, [])
+    monday_titles = [item.title for item in result.schedule if item.day == "Monday"]
+
+    assert monday_titles[:2] == ["Early Care", "Late Care"]
+
+
+def test_multi_pet_schedule_respects_shared_daily_budget():
+    request = ScheduleRequest(
+        owner_name="Alex",
+        available_time_per_day=60,
+        pets=[
+            PetInput(
+                name="Buddy",
+                species="Dog",
+                age=3,
+                tasks=[TaskInput(title="Walk", duration_minutes=40, priority="high", frequency="daily")],
+            ),
+            PetInput(
+                name="Whiskers",
+                species="Cat",
+                age=5,
+                tasks=[TaskInput(title="Play", duration_minutes=40, priority="low", frequency="daily")],
+            ),
+        ],
+    )
+
+    result = build_deterministic_fallback(
+        request,
+        {"Buddy": [_cite("b1")], "Whiskers": [_cite("w1")]},
+        [],
+    )
+
+    monday_total = sum(item.duration_minutes for item in result.schedule if item.day == "Monday")
+    monday_dropped = [task for task in result.dropped_tasks if task["day"] == "Monday"]
+    assert monday_total <= 60
+    assert monday_dropped == [
+        {"day": "Monday", "pet": "Whiskers", "title": "Play", "duration_minutes": 40}
+    ]
 
 
 def test_retrieval_context_count_reflects_citations():

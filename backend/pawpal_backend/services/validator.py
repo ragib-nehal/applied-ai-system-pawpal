@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 
-from ..schemas import RAGScheduleResponse, ScheduleRequest, ValidationResult
+from ..schemas import RAGScheduleResponse, ScheduledTask, ScheduleRequest, ValidationResult
 
 
 CRITICAL_KEYWORDS = ("med", "medication", "insulin", "pill", "inhaler")
@@ -15,6 +15,42 @@ _CRITICAL_KEYWORDS_RE = re.compile(
 
 def _is_critical_title(title: str) -> bool:
     return bool(_CRITICAL_KEYWORDS_RE.search(title))
+
+
+def _normalize_task_key_part(value: object) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def scheduled_task_matches_dropped_task(item: ScheduledTask, dropped_task: dict) -> bool:
+    """Match model-provided dropped tasks to parsed schedule rows."""
+    if not isinstance(dropped_task, dict):
+        return False
+
+    same_identity = (
+        _normalize_task_key_part(item.day) == _normalize_task_key_part(dropped_task.get("day"))
+        and _normalize_task_key_part(item.pet) == _normalize_task_key_part(dropped_task.get("pet"))
+        and _normalize_task_key_part(item.title) == _normalize_task_key_part(dropped_task.get("title"))
+    )
+    if not same_identity:
+        return False
+
+    dropped_duration = dropped_task.get("duration_minutes")
+    if dropped_duration is None:
+        return True
+
+    try:
+        return item.duration_minutes == int(dropped_duration)
+    except (TypeError, ValueError):
+        return False
+
+
+def scheduled_task_key(item: ScheduledTask) -> tuple[str, str, str, int]:
+    return (
+        _normalize_task_key_part(item.day),
+        _normalize_task_key_part(item.pet),
+        _normalize_task_key_part(item.title),
+        item.duration_minutes,
+    )
 
 
 def validate_response(response: RAGScheduleResponse, request: ScheduleRequest) -> ValidationResult:
@@ -38,6 +74,12 @@ def validate_response(response: RAGScheduleResponse, request: ScheduleRequest) -
         if total > request.available_time_per_day:
             errors.append(
                 f"Daily minutes exceeded on {day}: {total} > {request.available_time_per_day}."
+            )
+
+    for item in response.schedule:
+        if any(scheduled_task_matches_dropped_task(item, dropped) for dropped in response.dropped_tasks):
+            errors.append(
+                f"Task is both scheduled and dropped: {item.pet} - {item.title} on {item.day}."
             )
 
     for pet in request.pets:

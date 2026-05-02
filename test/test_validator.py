@@ -64,10 +64,11 @@ def _request(available_time=120, pet_name="Buddy", task_title="Walk"):
     )
 
 
-def _response(schedule=None, guidance=None):
+def _response(schedule=None, guidance=None, dropped_tasks=None):
     return RAGScheduleResponse(
         schedule=schedule or [],
         guidance=guidance or [],
+        dropped_tasks=dropped_tasks or [],
         model_provider="test",
         validation_status="valid",
     )
@@ -248,6 +249,24 @@ def test_fully_valid_response_returns_no_errors():
     result = validate_response(response, request)
     assert result.valid
     assert result.errors == []
+
+
+def test_task_cannot_be_both_scheduled_and_dropped():
+    request = _request(task_title="Walk")
+    response = _response(
+        schedule=[_scheduled_task(pet="Buddy", title="Walk", day="Monday", duration_minutes=20)],
+        dropped_tasks=[
+            {
+                "day": "Monday",
+                "pet": "Buddy",
+                "title": "Walk",
+                "duration_minutes": 20,
+            }
+        ],
+    )
+    result = validate_response(response, request)
+    assert not result.valid
+    assert any("both scheduled and dropped" in e.lower() for e in result.errors)
 
 
 # ---------------------------------------------------------------------------

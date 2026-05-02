@@ -3,17 +3,17 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from datetime import date, timedelta
-from backend.pawpal_backend.services.legacy_scheduler import Task, Pet, Owner, Scheduler, OwnerScheduler
+from backend.pawpal_backend.services.legacy_scheduler import Task, Pet, Owner, Schedule, Scheduler, OwnerScheduler
 
 
 def make_task(**kwargs):
-    defaults = dict(
-        title="Test Task",
-        duration_minutes=30,
-        priority="medium",
-        frequency="daily",
-        description="A test task",
-    )
+    defaults = {
+        "title": "Test Task",
+        "duration_minutes": 30,
+        "priority": "medium",
+        "frequency": "daily",
+        "description": "A test task",
+    }
     defaults.update(kwargs)
     return Task(**defaults)
 
@@ -67,6 +67,33 @@ def test_added_task_is_retrievable():
     assert pet.tasks[0].title == "Grooming"
 
 
+def test_task_priority_score_maps_known_priorities():
+    assert make_task(priority="high").get_priority_score() == 3
+    assert make_task(priority="medium").get_priority_score() == 2
+    assert make_task(priority="low").get_priority_score() == 1
+
+
+def test_task_can_fit_compares_duration_to_available_minutes():
+    task = make_task(duration_minutes=30)
+
+    assert task.can_fit(30) is True
+    assert task.can_fit(29) is False
+
+
+def test_list_frequency_is_due_only_on_listed_days():
+    task = make_task(frequency=["Monday", "Wednesday"])
+
+    assert task.is_due_today("Monday") is True
+    assert task.is_due_today("Tuesday") is False
+    assert task.is_due_today("Wednesday") is True
+
+
+def test_future_due_date_is_not_due_today():
+    task = make_task(frequency="daily", due_date=date.today() + timedelta(days=1))
+
+    assert task.is_due_today("Monday") is False
+
+
 # --- Sorting Correctness Tests ---
 
 def make_owner(minutes=120):
@@ -115,6 +142,35 @@ def test_fit_tasks_sorts_untimed_by_priority():
     fitted = scheduler.fit_tasks_in_day("Monday", tasks)
     titles = [t.title for t in fitted]
     assert titles == ["High Task", "Medium Task", "Low Task"]
+
+
+def test_calculate_task_priority_boosts_matching_special_need():
+    owner = make_owner(minutes=120)
+    pet = Pet(
+        name="Buddy",
+        species="Dog",
+        age=3,
+        energy_level="high",
+        special_needs=["Medication"],
+    )
+    medication = make_task(title="Medication", priority="medium")
+    walk = make_task(title="Walk", priority="medium")
+    scheduler = Scheduler(pet, owner, [medication, walk])
+
+    assert scheduler.calculate_task_priority(medication) == 3
+    assert scheduler.calculate_task_priority(walk) == 2
+
+
+def test_schedule_adds_tasks_and_totals_day_minutes():
+    owner = make_owner(minutes=120)
+    pet = Pet(name="Buddy", species="Dog", age=3, energy_level="high")
+    schedule = Schedule(pet, owner)
+
+    schedule.add_scheduled_task("Monday", make_task(title="Walk", duration_minutes=20), "08:00")
+    schedule.add_scheduled_task("Monday", make_task(title="Feed", duration_minutes=10), "08:20")
+
+    assert len(schedule.get_day_plan("Monday")) == 2
+    assert schedule.total_time_for_day("Monday") == 30
 
 
 # --- Recurrence Logic Tests ---
@@ -238,3 +294,141 @@ def test_no_time_slot_conflict_single_pet():
     os_ = OwnerScheduler(owner, [pet], tasks_per_pet)
     os_.generate_consolidated_schedule()
     assert os_.detect_time_slot_conflicts() == []
+
+
+def test_get_dropped_tasks_returns_tasks_that_do_not_fit():
+    owner = make_owner(minutes=20)
+    pet = Pet(name="Buddy", species="Dog", age=3, energy_level="high")
+    owner.add_pet(pet)
+    tasks_per_pet = {
+        "Buddy": [
+            make_task(title="Medication", duration_minutes=20, priority="high"),
+            make_task(title="Walk", duration_minutes=20, priority="low"),
+        ]
+    }
+    os_ = OwnerScheduler(owner, [pet], tasks_per_pet)
+
+    os_.generate_consolidated_schedule()
+
+    dropped = os_.get_dropped_tasks()
+    assert "Monday" in dropped
+    assert dropped["Monday"][0]["pet"] == "Buddy"
+    assert dropped["Monday"][0]["task"].title == "Walk"
+
+
+def test_suggest_consolidated_tasks_returns_titles_scheduled_for_multiple_pets():
+    owner = make_owner(minutes=120)
+    pet1 = Pet(name="Buddy", species="Dog", age=3, energy_level="high")
+    pet2 = Pet(name="Whiskers", species="Cat", age=5, energy_level="low")
+    owner.add_pet(pet1)
+    owner.add_pet(pet2)
+    tasks_per_pet = {
+        "Buddy": [make_task(title="Feed", duration_minutes=10)],
+        "Whiskers": [make_task(title="Feed", duration_minutes=10)],
+    }
+    os_ = OwnerScheduler(owner, [pet1, pet2], tasks_per_pet)
+
+    os_.generate_consolidated_schedule()
+
+    assert os_.suggest_consolidated_tasks() == ["Feed"]
+
+
+def test_filter_tasks_can_limit_by_pet_and_completion_status():
+    owner = make_owner(minutes=120)
+    pet1 = Pet(name="Buddy", species="Dog", age=3, energy_level="high")
+    pet2 = Pet(name="Whiskers", species="Cat", age=5, energy_level="low")
+    owner.add_pet(pet1)
+    owner.add_pet(pet2)
+    tasks_per_pet = {
+        "Buddy": [make_task(title="Walk", duration_minutes=20)],
+        "Whiskers": [make_task(title="Feed", duration_minutes=10)],
+    }
+    os_ = OwnerScheduler(owner, [pet1, pet2], tasks_per_pet)
+    os_.generate_consolidated_schedule()
+
+    filtered = os_.filter_tasks("Monday", pet_name="Buddy", completed=False)
+
+    assert list(filtered.keys()) == ["Buddy"]
+    assert filtered["Buddy"][0]["task"].title == "Walk"
+
+
+def test_conflict_reports_describe_no_conflicts():
+    owner = make_owner(minutes=120)
+    pet = Pet(name="Buddy", species="Dog", age=3, energy_level="high")
+    owner.add_pet(pet)
+    os_ = OwnerScheduler(owner, [pet], {"Buddy": [make_task(title="Walk", duration_minutes=20)]})
+    os_.generate_consolidated_schedule()
+
+    assert os_.get_conflict_report() == "No conflicts detected."
+    assert os_.get_time_slot_conflict_report() == "No time-slot conflicts detected."
+
+
+# --- Weekly Frequency Day Coverage ---
+
+ALL_WEEKDAYS = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
+
+
+def test_weekly_frequency_supports_every_weekday():
+    """A `weekly:<Day>` task is only due on its matching weekday for each of the seven days.
+
+    Protects the backend contract the Streamlit frequency dropdown depends on:
+    every weekday must round-trip through `Task.is_due_today` correctly.
+    """
+    for target_day in ALL_WEEKDAYS:
+        task = make_task(frequency=f"weekly:{target_day}")
+        for day in ALL_WEEKDAYS:
+            assert task.is_due_today(day) is (day == target_day), (
+                f"weekly:{target_day} unexpectedly "
+                f"{'not ' if day == target_day else ''}due on {day}"
+            )
+
+
+def test_weekly_recurrence_advances_seven_days_for_each_weekday():
+    """`mark_complete` on every `weekly:<Day>` advances `due_date` by 7 days
+    and preserves the original frequency string."""
+    today = date.today()
+    for target_day in ALL_WEEKDAYS:
+        task = make_task(frequency=f"weekly:{target_day}", due_date=today)
+        next_task = task.mark_complete()
+        assert next_task is not None
+        assert next_task.due_date == today + timedelta(weeks=1)
+        assert next_task.frequency == f"weekly:{target_day}"
+        assert next_task.completed is False
+
+
+def test_weekly_task_lands_only_on_target_day_in_consolidated_schedule():
+    """The `OwnerScheduler` places a `weekly:<Day>` task only on its target weekday
+    when generating the consolidated weekly plan."""
+    for target_day in ALL_WEEKDAYS:
+        owner = make_owner(minutes=120)
+        pet = Pet(name="Buddy", species="Dog", age=3, energy_level="high")
+        owner.add_pet(pet)
+        tasks_per_pet = {
+            "Buddy": [
+                make_task(
+                    title=f"{target_day} grooming",
+                    duration_minutes=20,
+                    frequency=f"weekly:{target_day}",
+                )
+            ],
+        }
+        os_ = OwnerScheduler(owner, [pet], tasks_per_pet)
+        os_.generate_consolidated_schedule()
+        for day in ALL_WEEKDAYS:
+            entries = os_.get_daily_summary(day).get("Buddy", [])
+            if day == target_day:
+                assert len(entries) == 1, (
+                    f"weekly:{target_day} task missing from {day} schedule"
+                )
+            else:
+                assert entries == [], (
+                    f"weekly:{target_day} task unexpectedly scheduled on {day}"
+                )
