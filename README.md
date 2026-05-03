@@ -1,4 +1,4 @@
-# FetchPlan — Portfolio README
+# FetchPlan 
 
 Portfolio readme for FetchPlan — a local-first applied-AI pet-care scheduler with RAG, validation, repair, and a deterministic fallback (FastAPI · Streamlit · Ollama · Chroma · SQLite).
 
