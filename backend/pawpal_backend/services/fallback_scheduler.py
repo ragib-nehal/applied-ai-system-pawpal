@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from .legacy_scheduler import Owner, OwnerScheduler, Pet, Task
 from ..schemas import Citation, GuidanceItem, RAGScheduleResponse, ScheduledTask, ScheduleRequest
 
@@ -25,6 +27,7 @@ def build_deterministic_fallback(
         pets.append(pet)
         tasks_per_pet[pet.name] = []
         for t in pet_in.tasks:
+            due_date = date.today() if t.frequency == "once" else None
             tasks_per_pet[pet.name].append(
                 Task(
                     title=t.title,
@@ -34,6 +37,7 @@ def build_deterministic_fallback(
                     description=t.description,
                     preferred_time=t.preferred_time,
                     completed=t.completed,
+                    due_date=due_date,
                 )
             )
 

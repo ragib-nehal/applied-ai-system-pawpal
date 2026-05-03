@@ -23,12 +23,33 @@ See also:
 - CLAUDE.md "Deterministic fallback" section — high-level architecture note.
 """
 from __future__ import annotations
+
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta
 from typing import Optional
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+_PREFERRED_TIME_INVALID = 24 * 60 + 1  # minutes; sorts after any valid clock time
+
+
+def _preferred_time_sort_minutes(value: object) -> int:
+    """Parse preferred_time to minutes since midnight; invalid / empty sorts last."""
+    if isinstance(value, list):
+        if not value:
+            return _PREFERRED_TIME_INVALID
+        return min(_preferred_time_sort_minutes(v) for v in value)
+
+    raw = " ".join(str(value or "").split())
+    m = re.match(r"^(\d{1,2})\s*:\s*(\d{2})$", raw)
+    if not m:
+        return _PREFERRED_TIME_INVALID
+    h, mi = int(m.group(1)), int(m.group(2))
+    if not (0 <= h <= 23 and 0 <= mi <= 59):
+        return _PREFERRED_TIME_INVALID
+    return h * 60 + mi
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -267,7 +288,11 @@ class Task:
         if self.frequency == "daily":
             return True
         if self.frequency == "once":
-            return True
+            if self.due_date is None:
+                return False
+            if date.today() != self.due_date:
+                return False
+            return day == DAYS[self.due_date.weekday()]
         # supports "weekly:Monday" or a list of days like ["Monday", "Wednesday"]
         if isinstance(self.frequency, list):
             return day in self.frequency
@@ -391,10 +416,7 @@ class Scheduler:
 
     def sort_by_time(self, tasks: list[Task]) -> list[Task]:
         """Return tasks sorted by preferred_time (HH:MM). Tasks without a time sort last."""
-        return sorted(
-            tasks,
-            key=lambda t: t.preferred_time if t.preferred_time else "99:99"
-        )
+        return sorted(tasks, key=lambda t: _preferred_time_sort_minutes(t.preferred_time))
 
     def explain_scheduling_decision(self, task: Task, day: str, time: str) -> str:
         """Return a human-readable string explaining why a task was placed on a given day and time."""
@@ -437,7 +459,7 @@ class OwnerScheduler:
             # tasks fill in by priority score (special-needs boost included).
             timed = sorted(
                 [(p, t) for p, t in all_due if t.preferred_time],
-                key=lambda x: x[1].preferred_time,
+                key=lambda x: _preferred_time_sort_minutes(x[1].preferred_time),
             )
             untimed = sorted(
                 [(p, t) for p, t in all_due if not t.preferred_time],

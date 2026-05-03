@@ -4,10 +4,22 @@ import json
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from backend.pawpal_backend.schemas import Citation, PetInput, RetrievalRecordInput, ScheduleRequest, TaskInput
+from backend.pawpal_backend.schemas import (
+    Citation,
+    PetInput,
+    RAGScheduleResponse,
+    RetrievalRecordInput,
+    ScheduledTask,
+    ScheduleRequest,
+    TaskInput,
+)
+from backend.pawpal_backend.services.legacy_scheduler import DAYS
 from backend.pawpal_backend.services import db as db_module
 from backend.pawpal_backend.services import rag_pipeline as rag_module
-from backend.pawpal_backend.services.rag_pipeline import RAGPipeline
+from backend.pawpal_backend.services.rag_pipeline import (
+    RAGPipeline,
+    expand_daily_tasks_from_request,
+)
 
 
 class FakeRetriever:
@@ -133,6 +145,7 @@ class OverlappingDroppedClient:
                     "day": "Monday",
                     "pet": "Buddy",
                     "title": "Morning walk",
+                    "time": "08:10",
                     "duration_minutes": 20,
                 }
             ],
@@ -179,6 +192,7 @@ class DistinctDroppedClient:
                     "day": "Monday",
                     "pet": "Buddy",
                     "title": "Morning walk",
+                    "time": "08:10",
                     "duration_minutes": 20,
                 }
             ],
@@ -242,12 +256,15 @@ def test_rag_pipeline_removes_dropped_task_from_schedule_payload():
 
     assert result.used_fallback is False
     assert result.validation_status == "valid"
-    assert [item.title for item in result.schedule] == ["Medication"]
+    assert len(result.schedule) == 7
+    assert {item.title for item in result.schedule} == {"Medication"}
+    assert {item.day for item in result.schedule} == set(DAYS)
     assert result.dropped_tasks == [
         {
             "day": "Monday",
             "pet": "Buddy",
             "title": "Morning walk",
+            "time": "08:10",
             "duration_minutes": 20,
         }
     ]
@@ -257,7 +274,9 @@ def test_rag_pipeline_preserves_distinct_scheduled_and_dropped_tasks():
     pipeline = RAGPipeline(retriever=FakeRetriever(), llm_client=DistinctDroppedClient())
     result = pipeline.run(make_request())
 
-    assert [item.title for item in result.schedule] == ["Medication"]
+    assert len(result.schedule) == 7
+    assert {item.title for item in result.schedule} == {"Medication"}
+    assert {item.day for item in result.schedule} == set(DAYS)
     assert [task["title"] for task in result.dropped_tasks] == ["Morning walk"]
 
 
@@ -498,6 +517,7 @@ def test_build_generation_prompt_contains_request_context_and_schema():
     assert payload["pets"][0]["name"] == "Buddy"
     assert payload["retrieval_context"]["Buddy"][0]["record_id"] == "ctx"
     assert "required_output_schema" in payload
+    assert "rules" in payload["required_output_schema"]
     assert "citations" in payload["required_output_schema"]["schedule"][0]
 
 
@@ -539,9 +559,213 @@ def test_parse_generated_response_skips_non_dict_schedule_and_guidance_rows():
     assert [guide.title for guide in result.guidance] == ["Care tip for Buddy"]
 
 
-# ---------------------------------------------------------------------------
-# request_pet_from_title helper
-# ---------------------------------------------------------------------------
+def test_canonical_days_from_day_field_weekday_range_with_daily_suffix():
+    from backend.pawpal_backend.services.rag_pipeline import canonical_days_from_day_field
+
+    assert canonical_days_from_day_field("Monday to Friday (as per daily task)") == [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+    ]
+    assert canonical_days_from_day_field("Mon–Fri") == [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+    ]
+    assert canonical_days_from_day_field("on weekdays please") == [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+    ]
+
+
+def test_canonical_days_from_day_field_daily_and_every_day_mean_all_week():
+    from backend.pawpal_backend.services.legacy_scheduler import DAYS
+    from backend.pawpal_backend.services.rag_pipeline import canonical_days_from_day_field
+
+    assert canonical_days_from_day_field("daily") == list(DAYS)
+    assert canonical_days_from_day_field("every day") == list(DAYS)
+    assert canonical_days_from_day_field("all week") == list(DAYS)
+
+
+def test_canonical_days_from_weekend():
+    from backend.pawpal_backend.services.rag_pipeline import canonical_days_from_day_field
+
+    assert canonical_days_from_day_field("weekend walks") == ["Saturday", "Sunday"]
+
+
+def test_canonical_days_unknown_passthrough():
+    from backend.pawpal_backend.services.rag_pipeline import canonical_days_from_day_field
+
+    assert canonical_days_from_day_field("next quarter") == ["next quarter"]
+
+
+def test_parse_generated_response_expands_monday_through_friday_to_five_tasks():
+    pipeline = RAGPipeline(retriever=FakeRetriever(), llm_client=ValidClient())
+    raw = ValidClient().generate_json("sys", "user")
+    raw["schedule"][0]["day"] = "Monday to Friday (as per daily task)"
+    cites = {"Buddy": []}
+
+    result = pipeline._parse_generated_response(raw, cites)
+
+    assert len(result.schedule) == 5
+    assert {item.day for item in result.schedule} == {
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+    }
+    base = raw["schedule"][0]
+    for item in result.schedule:
+        assert item.pet == base["pet"]
+        assert item.time == base["time"]
+        assert item.title == base["title"]
+        assert item.duration_minutes == base["duration_minutes"]
+
+
+def test_parse_generated_response_expands_daily_to_seven_tasks():
+    pipeline = RAGPipeline(retriever=FakeRetriever(), llm_client=ValidClient())
+    raw = ValidClient().generate_json("sys", "user")
+    raw["schedule"][0]["day"] = "daily"
+    cites = {"Buddy": []}
+
+    result = pipeline._parse_generated_response(raw, cites)
+
+    assert len(result.schedule) == 7
+    assert {item.day for item in result.schedule} == set(DAYS)
+
+
+def test_expand_daily_tasks_from_request_fills_sparse_model_days():
+    cite = [Citation(record_id="c1", section="medical_history", snippet="context")]
+    schedule = [
+        ScheduledTask(
+            pet="Buddy",
+            day="Monday",
+            time="08:30",
+            title="Medication",
+            duration_minutes=10,
+            priority="high",
+            reason="daily med",
+            citations=cite,
+        )
+    ]
+    req = ScheduleRequest(
+        owner_name="Alex",
+        available_time_per_day=120,
+        pets=[
+            PetInput(
+                name="Buddy",
+                species="Dog",
+                age=3,
+                tasks=[
+                    TaskInput(
+                        title="Medication",
+                        duration_minutes=10,
+                        priority="high",
+                        frequency="daily",
+                    )
+                ],
+            )
+        ],
+        retrieval_records=[],
+    )
+    out = expand_daily_tasks_from_request(schedule, req)
+    assert len(out) == 7
+    assert {item.day for item in out} == set(DAYS)
+    assert all(item.time == "08:30" for item in out)
+
+
+def test_expand_daily_tasks_from_request_already_seven_no_duplicates():
+    cite = [Citation(record_id="c1", section="medical_history", snippet="context")]
+    schedule = [
+        ScheduledTask(
+            pet="Buddy",
+            day=day,
+            time="07:15",
+            title="Walk",
+            duration_minutes=20,
+            priority="medium",
+            reason="Exercise",
+            citations=cite,
+        )
+        for day in DAYS
+    ]
+    req = ScheduleRequest(
+        owner_name="Alex",
+        available_time_per_day=60,
+        pets=[
+            PetInput(
+                name="Buddy",
+                species="Dog",
+                age=3,
+                tasks=[TaskInput(title="Walk", duration_minutes=20, frequency="daily", priority="medium")],
+            )
+        ],
+        retrieval_records=[],
+    )
+    pipeline = RAGPipeline(retriever=FakeRetriever(), llm_client=ValidClient())
+    expanded = expand_daily_tasks_from_request(schedule, req)
+    deduped = pipeline._reconcile_schedule_items(expanded, [])
+    assert len(deduped) == 7
+
+
+def test_expand_daily_then_validate_daily_budget_overflow():
+    from backend.pawpal_backend.services.validator import validate_response
+
+    cite = [Citation(record_id="r1", section="behavior_notes", snippet="Brush coat daily.")]
+    schedule = [
+        ScheduledTask(
+            pet="Zoe",
+            day="Wednesday",
+            time="10:00",
+            title="Brushing",
+            duration_minutes=40,
+            priority="low",
+            reason="coat care",
+            citations=cite,
+        )
+    ]
+    req = ScheduleRequest(
+        owner_name="Sam",
+        available_time_per_day=30,
+        pets=[
+            PetInput(
+                name="Zoe",
+                species="cat",
+                age=4,
+                tasks=[
+                    TaskInput(
+                        title="Brushing",
+                        duration_minutes=40,
+                        priority="low",
+                        frequency="daily",
+                    )
+                ],
+            )
+        ],
+        retrieval_records=[],
+    )
+    expanded = expand_daily_tasks_from_request(schedule, req)
+    response = RAGScheduleResponse(
+        schedule=expanded,
+        guidance=[],
+        dropped_tasks=[],
+        retrieval_context_count=0,
+        model_provider="test",
+        validation_status="valid",
+        validation_errors=[],
+    )
+    vr = validate_response(response, req)
+    assert vr.valid is False
+    assert any("exceeded" in e.lower() for e in vr.errors)
+
 
 def test_request_pet_from_title_finds_pet_by_name_in_title():
     from backend.pawpal_backend.services.rag_pipeline import request_pet_from_title

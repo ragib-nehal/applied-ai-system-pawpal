@@ -109,6 +109,9 @@ def render_validation_guidance() -> None:
 def render_settings_sidebar() -> None:
     with st.sidebar:
         st.header("Settings")
+        flash_reset = st.session_state.pop("_flash_reset_ok", None)
+        if flash_reset:
+            st.success(flash_reset)
         with st.expander("Reset demo data", expanded=False):
             st.caption(
                 "Wipes the local SQLite + Chroma stores so demos start "
@@ -128,10 +131,14 @@ def render_settings_sidebar() -> None:
                             )
                             response.raise_for_status()
                             st.session_state.rag_result = None
+                            st.session_state.pop("pets", None)
+                            st.session_state.pop("tasks_per_pet", None)
+                            st.session_state.pop("records_per_pet", None)
                             st.session_state.reset_confirm = False
-                            st.success(
-                                response.json().get("message", "Reset complete.")
+                            st.session_state["_flash_reset_ok"] = response.json().get(
+                                "message", "Reset complete."
                             )
+                            st.rerun()
                         except Exception as exc:
                             st.session_state.reset_confirm = False
                             st.error(f"Reset failed: {exc}")
@@ -151,8 +158,21 @@ def init_state() -> None:
     st.session_state.setdefault("records_per_pet", {})
     st.session_state.setdefault("rag_result", None)
     st.session_state.setdefault("current_step", 1)
-    st.session_state.setdefault("owner_name", "Jordan")
-    st.session_state.setdefault("available_time", 120)
+    st.session_state.setdefault("wizard_owner_name", "")
+    st.session_state.setdefault("wizard_available_minutes", "")
+    # Legacy session keys (older builds): copy once into wizard-backed storage.
+    if st.session_state["wizard_owner_name"] == "" and st.session_state.get("owner_name"):
+        st.session_state.wizard_owner_name = str(st.session_state.get("owner_name") or "")
+    if st.session_state["wizard_available_minutes"] == "" and st.session_state.get(
+        "available_minutes"
+    ):
+        st.session_state.wizard_available_minutes = str(
+            st.session_state.get("available_minutes") or ""
+        )
+    if "available_time" in st.session_state:
+        legacy_mins = str(int(st.session_state.pop("available_time")))
+        if st.session_state["wizard_available_minutes"] == "":
+            st.session_state.wizard_available_minutes = legacy_mins
 
 
 def build_payload(owner_name: str, available_time: int) -> dict:
@@ -185,6 +205,80 @@ def build_payload(owner_name: str, available_time: int) -> dict:
         "pets": pets_payload,
         "retrieval_records": retrieval_records,
     }
+
+
+def parse_available_minutes_from_form(raw: object) -> int | None:
+    s = str(raw or "").strip()
+    if not s:
+        st.error("Enter available minutes per day (whole number between 10 and 480).")
+        return None
+    try:
+        mins = int(s)
+    except ValueError:
+        st.error("Available minutes/day must be a whole number.")
+        return None
+    if mins < 10 or mins > 480:
+        st.error("Available minutes/day must be between 10 and 480.")
+        return None
+    return mins
+
+
+def run_schedule_generation_if_ready() -> None:
+    owner = (st.session_state.get("wizard_owner_name") or "").strip()
+    if not owner:
+        st.error("Enter an owner name.")
+        return
+    mins = parse_available_minutes_from_form(
+        st.session_state.get("wizard_available_minutes")
+    )
+    if mins is None:
+        return
+
+    payload = build_payload(owner, mins)
+    all_tasks = [
+        t
+        for pet in st.session_state.pets
+        for t in st.session_state.tasks_per_pet.get(pet["name"], [])
+    ]
+    if not payload["pets"]:
+        st.error("Add at least one pet.")
+        return
+    if not all_tasks:
+        st.error("Add at least one task.")
+        return
+
+    with st.status("Running RAG schedule generation...", expanded=True) as status:
+        try:
+            st.write("Building request payload...")
+            pet_count = len(payload["pets"])
+            record_count = len(payload.get("retrieval_records", []))
+            st.write(
+                f"Submitting {pet_count} pet(s), {len(all_tasks)} task(s) "
+                f"and {record_count} context record(s) to the backend."
+            )
+            st.write("Calling RAG pipeline (retrieval + generation + validation)...")
+            response = requests.post(
+                f"{API_BASE}/schedule", json=payload, timeout=240
+            )
+            response.raise_for_status()
+            st.write("Parsing response...")
+            result = response.json()
+            st.session_state.rag_result = result
+            validation_status = result.get("validation_status", "unknown")
+            used_fallback = result.get("used_fallback", False)
+            summary = (
+                f"Schedule generated (status: {validation_status}"
+                f"{', fallback' if used_fallback else ''})."
+            )
+            status.update(label=summary, state="complete", expanded=False)
+        except Exception as exc:
+            st.session_state.rag_result = None
+            status.update(
+                label="Schedule generation failed.",
+                state="error",
+                expanded=True,
+            )
+            st.error(f"Failed to call API: {exc}")
 
 
 def _time_sort_key(row: dict) -> tuple[int, int]:
@@ -431,11 +525,24 @@ def step_is_unlocked(step: int) -> bool:
     if step in (3, 4):
         return has_pet
     if step == 5:
-        any_task = any(
-            tasks for tasks in st.session_state.tasks_per_pet.values()
-        )
-        return has_pet and any_task
+        return has_pet and any(st.session_state.tasks_per_pet.values())
     return True
+
+
+def _ensure_owner_ui_seed() -> None:
+    if "owner_name_ui" not in st.session_state:
+        st.session_state.owner_name_ui = st.session_state.get("wizard_owner_name", "")
+    if "available_minutes_ui" not in st.session_state:
+        st.session_state.available_minutes_ui = st.session_state.get(
+            "wizard_available_minutes", ""
+        )
+
+
+def sync_owner_profile_to_wizard() -> None:
+    st.session_state.wizard_owner_name = st.session_state.get("owner_name_ui", "")
+    st.session_state.wizard_available_minutes = st.session_state.get(
+        "available_minutes_ui", ""
+    )
 
 
 def render_progress_bar() -> None:
@@ -454,6 +561,8 @@ def render_progress_bar() -> None:
                 disabled=(not unlocked) or is_current,
                 use_container_width=True,
             ):
+                if st.session_state.current_step == 1:
+                    sync_owner_profile_to_wizard()
                 st.session_state.current_step = step
                 st.rerun()
 
@@ -480,6 +589,8 @@ def render_nav_buttons() -> None:
             disabled=not can_advance,
             use_container_width=True,
         ):
+            if step == 1:
+                sync_owner_profile_to_wizard()
             st.session_state.current_step = next_step
             st.rerun()
 
@@ -505,15 +616,21 @@ def render_step_owner() -> None:
     st.caption(
         "Who is the schedule for, and how many minutes per day are realistic?"
     )
+    _ensure_owner_ui_seed()
     col1, col2 = st.columns(2)
     with col1:
-        st.text_input("Owner name", key="owner_name")
+        st.text_input(
+            "Owner name",
+            key="owner_name_ui",
+            placeholder="e.g. Jordan",
+            on_change=sync_owner_profile_to_wizard,
+        )
     with col2:
-        st.number_input(
+        st.text_input(
             "Available minutes/day",
-            min_value=10,
-            max_value=480,
-            key="available_time",
+            key="available_minutes_ui",
+            placeholder="e.g. 120 (whole number, 10–480)",
+            on_change=sync_owner_profile_to_wizard,
         )
 
 
@@ -705,68 +822,7 @@ def render_runtime_status(result: dict) -> None:
             "Validation issues:\n- " + "\n- ".join(result["validation_errors"])
         )
 
-
-def render_step_generate() -> None:
-    st.subheader("Step 5 — Generate & review schedule")
-    st.caption(
-        "Submit your inputs to the RAG pipeline. The runtime status, weekly "
-        "board, guidance and dropped tasks all appear below the button."
-    )
-
-    if st.button("Generate Schedule", type="primary"):
-        payload = build_payload(
-            st.session_state.owner_name, int(st.session_state.available_time)
-        )
-        all_tasks = [t for p in payload["pets"] for t in p["tasks"]]
-        if not payload["pets"]:
-            st.error("Add at least one pet.")
-        elif not all_tasks:
-            st.error("Add at least one task.")
-        else:
-            with st.status(
-                "Running RAG schedule generation...", expanded=True
-            ) as status:
-                try:
-                    st.write("Building request payload...")
-                    pet_count = len(payload["pets"])
-                    record_count = len(payload.get("retrieval_records", []))
-                    st.write(
-                        f"Submitting {pet_count} pet(s), {len(all_tasks)} task(s) "
-                        f"and {record_count} context record(s) to the backend."
-                    )
-
-                    st.write(
-                        "Calling RAG pipeline (retrieval + generation + "
-                        "validation)..."
-                    )
-                    response = requests.post(
-                        f"{API_BASE}/schedule", json=payload, timeout=240
-                    )
-                    response.raise_for_status()
-
-                    st.write("Parsing response...")
-                    result = response.json()
-                    st.session_state.rag_result = result
-
-                    validation_status = result.get("validation_status", "unknown")
-                    used_fallback = result.get("used_fallback", False)
-                    summary = (
-                        f"Schedule generated (status: {validation_status}"
-                        f"{', fallback' if used_fallback else ''})."
-                    )
-                    status.update(label=summary, state="complete", expanded=False)
-                except Exception as exc:
-                    status.update(
-                        label="Schedule generation failed.",
-                        state="error",
-                        expanded=True,
-                    )
-                    st.error(f"Failed to call API: {exc}")
-
-    result = st.session_state.rag_result
-    if not result:
-        return
-
+def render_schedule_result_below_button(result: dict) -> None:
     render_runtime_status(result)
 
     st.markdown("#### Weekly schedule")
@@ -802,13 +858,35 @@ def render_step_generate() -> None:
         st.success("No dropped tasks.")
 
 
+def render_step_generate() -> None:
+    st.subheader("Step 5 — Generate & review schedule")
+    st.caption(
+        "Submit your inputs to the RAG pipeline. The runtime status, weekly "
+        "board, guidance and dropped tasks all appear below the button."
+    )
+    owner_preview = (st.session_state.get("wizard_owner_name") or "").strip()
+    mins_preview = (st.session_state.get("wizard_available_minutes") or "").strip()
+    if owner_preview or mins_preview:
+        st.caption(
+            f"**Owner profile:** {owner_preview or '—'} · "
+            f"{mins_preview or '—'} minutes/day"
+        )
+
+    if st.button("Generate Schedule", type="primary"):
+        run_schedule_generation_if_ready()
+
+    result = st.session_state.rag_result
+    if not result:
+        return
+
+    render_schedule_result_below_button(result)
+
+
 st.set_page_config(page_title="FetchPlan", page_icon="🐾", layout="centered")
 init_state()
 render_settings_sidebar()
 render_header()
 
-st.divider()
-render_progress_bar()
 st.divider()
 
 step = st.session_state.current_step
@@ -823,6 +901,8 @@ elif step == 4:
 elif step == 5:
     render_step_generate()
 
+st.divider()
+render_progress_bar()
 st.divider()
 render_nav_buttons()
 

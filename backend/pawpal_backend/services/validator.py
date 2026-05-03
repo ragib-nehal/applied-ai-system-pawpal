@@ -30,6 +30,8 @@ def scheduled_task_matches_dropped_task(item: ScheduledTask, dropped_task: dict)
         _normalize_task_key_part(item.day) == _normalize_task_key_part(dropped_task.get("day"))
         and _normalize_task_key_part(item.pet) == _normalize_task_key_part(dropped_task.get("pet"))
         and _normalize_task_key_part(item.title) == _normalize_task_key_part(dropped_task.get("title"))
+        and _normalize_task_key_part(item.time)
+        == _normalize_task_key_part(dropped_task.get("time"))
     )
     if not same_identity:
         return False
@@ -44,11 +46,12 @@ def scheduled_task_matches_dropped_task(item: ScheduledTask, dropped_task: dict)
         return False
 
 
-def scheduled_task_key(item: ScheduledTask) -> tuple[str, str, str, int]:
+def scheduled_task_key(item: ScheduledTask) -> tuple[str, str, str, str, int]:
     return (
         _normalize_task_key_part(item.day),
         _normalize_task_key_part(item.pet),
         _normalize_task_key_part(item.title),
+        _normalize_task_key_part(item.time),
         item.duration_minutes,
     )
 

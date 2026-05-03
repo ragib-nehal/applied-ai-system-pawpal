@@ -260,6 +260,7 @@ def test_task_cannot_be_both_scheduled_and_dropped():
                 "day": "Monday",
                 "pet": "Buddy",
                 "title": "Walk",
+                "time": "08:00",
                 "duration_minutes": 20,
             }
         ],
