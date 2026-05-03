@@ -101,18 +101,17 @@ def make_owner(minutes=120):
 
 
 def test_sort_by_time_returns_chronological_order():
-    """Tasks with preferred_time are sorted earliest-first."""
+    """Tasks with preferred_time are sorted earliest-first (numeric clock, not lexicographic)."""
     owner = make_owner()
     pet = Pet(name="Buddy", species="Dog", age=3, energy_level="high")
     tasks = [
-        make_task(title="Afternoon Walk", preferred_time="14:00"),
-        make_task(title="Morning Feed",   preferred_time="07:00"),
-        make_task(title="Midday Play",    preferred_time="12:00"),
+        make_task(title="Noon", preferred_time="12:00"),
+        make_task(title="Eight", preferred_time="8:00"),
+        make_task(title="Seven", preferred_time="07:00"),
     ]
     scheduler = Scheduler(pet, owner, tasks)
     sorted_tasks = scheduler.sort_by_time(tasks)
-    times = [t.preferred_time for t in sorted_tasks]
-    assert times == sorted(times)
+    assert [t.title for t in sorted_tasks] == ["Seven", "Eight", "Noon"]
 
 
 def test_fit_tasks_schedules_timed_before_untimed():
@@ -199,6 +198,29 @@ def test_once_task_does_not_recur():
     """mark_complete on a one-time task returns None."""
     task = make_task(frequency="once")
     assert task.mark_complete() is None
+
+
+def test_once_task_is_due_only_on_matching_calendar_day():
+    """One-off tasks align with due_date == today and the corresponding weekday."""
+    today = date.today()
+    today_name = ALL_WEEKDAYS[today.weekday()]
+    task = make_task(frequency="once", due_date=today)
+
+    assert task.is_due_today(today_name) is True
+    other = next(d for d in ALL_WEEKDAYS if d != today_name)
+    assert task.is_due_today(other) is False
+
+
+def test_once_task_without_due_date_is_never_due():
+    task = make_task(frequency="once")
+    assert all(task.is_due_today(day) is False for day in ALL_WEEKDAYS)
+
+
+def test_once_task_not_due_when_calendar_day_differs():
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    task = make_task(frequency="once", due_date=yesterday)
+    assert all(task.is_due_today(day) is False for day in ALL_WEEKDAYS)
 
 
 def test_recurrence_preserves_task_metadata():
